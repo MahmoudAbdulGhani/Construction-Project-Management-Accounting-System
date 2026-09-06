@@ -1,92 +1,633 @@
 {% extends "dashboard/base_dashboard.html" %}
 {% load static %}
+
 {% block title %}Inventory | Cedar Control{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'css/inventory.css' %}">{% endblock %}
-{% block dashboard_content %}
-<section class="page-heading">
-  <div><p class="eyebrow">Materials control</p><h1>Inventory</h1><p>Track material availability, movement, and valuation across stores and project sites.</p></div>
-  <button class="primary-button" data-movement-new>＋ Record movement</button>
-</section>
 
-<section class="module-stat-grid">
-  <article class="module-stat tone-1"><span>Stock items</span><strong data-metric="stock">—</strong><em>Matching current filters</em></article>
-  <article class="module-stat tone-2"><span>Low stock</span><strong data-metric="low">—</strong><em>Below the reorder level</em></article>
-  <article class="module-stat tone-3"><span>Inventory value</span><strong data-metric="value">—</strong><em>Quantity × standard cost</em></article>
-  <article class="module-stat tone-4"><span>Site transfers today</span><strong data-metric="transfers">—</strong><em>Global, not affected by filters</em></article>
-</section>
-
-<section class="panel table-panel module-table">
-  <div class="filterbar">
-    <div class="local-search">⌕ <span>Search inventory…</span><input type="text" id="inventory-search-input" placeholder="Material, SKU or store" aria-label="Search inventory"></div>
-    <button class="quiet-button" data-status-filter="all">Stock: All</button>
-    <button class="quiet-button" data-status-filter="healthy">Healthy</button>
-    <button class="quiet-button" data-status-filter="low">Low stock</button>
-    <select id="inventory-warehouse-filter" class="quiet-select" aria-label="Filter by store">
-      <option value="">Store: All</option>
-    </select>
-  </div>
-  <div class="responsive-table">
-    <table>
-      <thead><tr><th>Material</th><th>SKU</th><th>Store / location</th><th>On hand</th><th>Unit cost</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody data-inventory-rows>
-        <tr class="empty-row"><td colspan="7"><strong>Loading inventory…</strong><span>Fetching from the inventory API.</span></td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<dialog class="movement-dialog" data-movement-dialog>
-  <form data-movement-form>
-    <header>
-      <div><p class="eyebrow">INVENTORY</p><h2 data-movement-form-title>Record movement</h2></div>
-      <button type="button" data-movement-close aria-label="Close">×</button>
-    </header>
-    <div class="movement-form-grid">
-      <label>Movement type *<select name="movement_type" data-movement-type required>
-        <option value="">Select…</option>
-        <option value="IN">Stock in</option>
-        <option value="OUT">Stock out</option>
-        <option value="RETURN">Return</option>
-        <option value="TRANSFER">Transfer</option>
-        <option value="ADJUSTMENT">Adjustment</option>
-      </select></label>
-      <label class="full">Material *<select name="material" data-movement-material required></select></label>
-      <label data-movement-warehouse-row>Warehouse *<select name="warehouse" data-movement-warehouse required></select></label>
-      <label data-movement-from-row hidden>Transfer from *<select name="from_warehouse" data-movement-from></select></label>
-      <label data-movement-to-row hidden>Transfer to *<select name="to_warehouse" data-movement-to></select></label>
-      <label>Quantity *<input name="quantity" data-movement-qty type="number" min="0" step="0.001" required></label>
-      <label data-movement-direction-row hidden>Adjustment direction
-        <span class="movement-direction">
-          <label><input type="radio" name="adjust_direction" value="increase" checked> Increase</label>
-          <label><input type="radio" name="adjust_direction" value="decrease"> Decrease</label>
-        </span>
-      </label>
-      <label>Reference<input name="reference" data-movement-reference maxlength="255"></label>
-      <label>Movement date *<input name="movement_date" data-movement-date type="datetime-local" required></label>
-      <label class="full">Notes<textarea name="notes" data-movement-notes></textarea></label>
-    </div>
-    <p class="movement-error" data-movement-error hidden></p>
-    <footer>
-      <button type="button" class="quiet-button" data-movement-close>Cancel</button>
-      <button class="primary-button">Record movement</button>
-    </footer>
-  </form>
-</dialog>
-
-<dialog class="movement-dialog movement-history-dialog" data-movement-history-dialog>
-  <header>
-    <div><p class="eyebrow">INVENTORY</p><h2 data-movement-history-title>Movement history</h2></div>
-    <button type="button" data-movement-history-close aria-label="Close">×</button>
-  </header>
-  <div class="responsive-table">
-    <table>
-      <thead><tr><th>Date</th><th>Type</th><th>Quantity</th><th>Reference</th><th>Notes</th></tr></thead>
-      <tbody data-movement-history-rows></tbody>
-    </table>
-  </div>
-  <footer>
-    <button type="button" class="quiet-button" data-movement-history-close>Close</button>
-  </footer>
-</dialog>
+{% block page_css %}
+<link rel="stylesheet" href="{% static 'css/inventory.css' %}">
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/inventory.js' %}" defer></script>{% endblock %}
+
+{% block dashboard_content %}
+
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Stock control</p>
+
+        <h1>Inventory</h1>
+
+        <p>
+            Track materials, warehouse quantities, project usage,
+            transfers, and low-stock alerts.
+        </p>
+    </div>
+
+    <div class="inventory-heading-actions">
+        <button
+            class="quiet-button"
+            type="button"
+            data-inventory-action="material"
+        >
+            Add material
+        </button>
+
+        <button
+            class="quiet-button"
+            type="button"
+            data-inventory-action="warehouse"
+        >
+            New warehouse
+        </button>
+
+        <button
+            class="primary-button"
+            type="button"
+            data-inventory-action="movement"
+        >
+            ＋ Record movement
+        </button>
+    </div>
+</section>
+
+
+<!-- Inventory overview -->
+
+<section class="module-stat-grid inventory-stat-grid">
+
+    <article class="module-stat tone-1">
+        <span>Inventory value</span>
+
+        <strong data-inventory-metric="value">
+            —
+        </strong>
+
+        <em>Live overview</em>
+    </article>
+
+
+    <article class="module-stat tone-2">
+        <span>Materials</span>
+
+        <strong data-inventory-metric="items">
+            —
+        </strong>
+
+        <em>Tracked stock items</em>
+    </article>
+
+
+    <article class="module-stat tone-3">
+        <span>Low-stock alerts</span>
+
+        <strong data-inventory-metric="low">
+            —
+        </strong>
+
+        <em>Needs attention</em>
+    </article>
+
+
+    <article class="module-stat tone-4">
+        <span>Warehouses</span>
+
+        <strong data-inventory-metric="warehouses">
+            —
+        </strong>
+
+        <em>Active locations</em>
+    </article>
+
+</section>
+
+
+<!-- Inventory table -->
+
+<section class="panel table-panel module-table inventory-table-panel">
+
+    <div class="filterbar">
+
+        <div class="local-search">
+            ⌕
+            <input
+                data-inventory-search
+                type="search"
+                placeholder="Search inventory…"
+                aria-label="Search inventory"
+            >
+        </div>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-warehouse
+            aria-label="Filter by warehouse"
+        >
+            <option value="">
+                Store: All
+            </option>
+        </select>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-stock
+            aria-label="Filter stock status"
+        >
+            <option value="">
+                Status: All
+            </option>
+
+            <option value="low">
+                Low stock
+            </option>
+
+            <option value="healthy">
+                In stock
+            </option>
+        </select>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-category
+            aria-label="Filter by category"
+        >
+            <option value="">
+                Category: All
+            </option>
+        </select>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>SKU</th>
+                    <th>Warehouse</th>
+                    <th>Available</th>
+                    <th>Reserved</th>
+                    <th>Reorder level</th>
+                    <th>Status</th>
+                    <th>Movement</th>
+                </tr>
+            </thead>
+
+
+            <tbody data-inventory-rows>
+
+                <tr>
+                    <td colspan="8">
+                        <strong>Loading inventory…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+
+    <!-- Pagination -->
+
+    <div class="inventory-pagination">
+
+        <span data-inventory-count>
+            Showing <strong data-inventory-visible-count>0</strong>
+            of <strong data-inventory-total-count>0</strong>
+            records
+        </span>
+
+        <div class="inventory-pagination-controls">
+
+            <button
+                class="quiet-button"
+                type="button"
+                data-inventory-prev
+                disabled
+            >
+                Previous
+            </button>
+
+            <div data-inventory-pages>
+                <!-- Pages generated by JS -->
+            </div>
+
+            <button
+                class="quiet-button"
+                type="button"
+                data-inventory-next
+                disabled
+            >
+                Next
+            </button>
+
+        </div>
+
+    </div>
+
+</section>
+<!-- Stock movements -->
+
+<section class="panel table-panel module-table inventory-movements-panel">
+
+    <div class="inventory-movements-heading">
+
+        <div>
+            <p class="eyebrow">Stock activity</p>
+            <h2>Recent stock movements</h2>
+        </div>
+
+        <span data-inventory-movement-count>
+            0 movements
+        </span>
+
+    </div>
+
+
+    <div class="filterbar movements-filterbar">
+
+        <div class="local-search">
+            ⌕
+            <input
+                data-movement-search
+                type="search"
+                placeholder="Search movements…"
+                aria-label="Search stock movements"
+            >
+        </div>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-movement-type
+            aria-label="Filter by movement direction"
+        >
+            <option value="">
+                Movement: All
+            </option>
+
+            <option value="IN">
+                In
+            </option>
+
+            <option value="OUT">
+                Out
+            </option>
+        </select>
+
+
+        <div class="inline-date-range">
+
+            <label>
+                From
+                <input
+                    type="date"
+                    data-movement-date-from
+                    aria-label="Movements from date"
+                >
+            </label>
+
+            <label>
+                To
+                <input
+                    type="date"
+                    data-movement-date-to
+                    aria-label="Movements to date"
+                >
+            </label>
+
+        </div>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>Warehouse</th>
+                    <th>Movement</th>
+                    <th>Quantity</th>
+                    <th>Reference</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+
+
+            <tbody data-inventory-movement-rows>
+
+                <tr>
+                    <td colspan="6">
+                        <strong>Loading movements…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+<!-- =========================================================
+     Inventory Management
+     ========================================================= -->
+
+<section class="panel inventory-management-panel">
+
+<div class="inventory-management-heading">
+
+    <div>
+        <p class="eyebrow">Inventory setup</p>
+        <h2>Materials & locations</h2>
+        <p>
+            Manage materials, material categories, and warehouses.
+        </p>
+    </div>
+
+</div>
+
+
+<!-- Management tabs -->
+
+<div class="inventory-management-tabs">
+
+    <button
+        type="button"
+        class="inventory-management-tab active"
+        data-inventory-management-tab="materials"
+    >
+        Materials
+    </button>
+
+    <button
+        type="button"
+        class="inventory-management-tab"
+        data-inventory-management-tab="categories"
+    >
+        Categories
+    </button>
+
+    <button
+        type="button"
+        class="inventory-management-tab"
+        data-inventory-management-tab="warehouses"
+    >
+        Warehouses
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     MATERIALS
+     ===================================================== -->
+
+<div
+    class="inventory-management-content active"
+    data-inventory-management-content="materials"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search materials…"
+                data-material-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="material"
+        >
+            ＋ Add material
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th>Unit</th>
+                    <th>Standard cost</th>
+                    <th>Minimum stock</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-material-management-rows>
+
+                <tr>
+                    <td colspan="8">
+                        <strong>Loading materials…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     CATEGORIES
+     ===================================================== -->
+
+<div
+    class="inventory-management-content"
+    data-inventory-management-content="categories"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search categories…"
+                data-category-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="category"
+        >
+            ＋ Add category
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-category-management-rows>
+
+                <tr>
+                    <td colspan="3">
+                        <strong>Loading categories…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     WAREHOUSES
+     ===================================================== -->
+
+<div
+    class="inventory-management-content"
+    data-inventory-management-content="warehouses"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search warehouses…"
+                data-warehouse-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="warehouse"
+        >
+            ＋ Add warehouse
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Warehouse</th>
+                    <th>Location</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-warehouse-management-rows>
+
+                <tr>
+                    <td colspan="3">
+                        <strong>Loading warehouses…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+</section>
+
+
+<!-- Inventory dialog -->
+
+<dialog data-inventory-dialog>
+
+    <form data-inventory-form>
+
+        <h2 data-inventory-title></h2>
+
+        <p
+            data-inventory-error
+            role="alert"
+        ></p>
+
+        <div data-inventory-fields></div>
+
+        <p>
+            <button
+                type="button"
+                class="quiet-button"
+                data-inventory-cancel
+            >
+                Cancel
+            </button>
+
+            <button
+                type="submit"
+                class="primary-button"
+                data-inventory-submit
+            >
+                Save
+            </button>
+        </p>
+
+    </form>
+
+</dialog>
+
+{% endblock %}
+
+
+{% block page_js %}
+<script src="{% static 'js/inventory.js' %}"></script>
+{% endblock %}

@@ -3,8 +3,10 @@ Django admin registration for the ``inventory`` app -- Material Management
 (CPMAS-28) and Inventory & Warehouse Management (CPMAS-29) slices.
 """
 from django.contrib import admin
+from django.db import transaction
 
 from .models import Material, MaterialCategory, Stock, StockMovement, Warehouse
+from .services import apply_stock_movement
 
 
 @admin.register(MaterialCategory)
@@ -66,11 +68,15 @@ class StockAdmin(admin.ModelAdmin):
 @admin.register(StockMovement)
 class StockMovementAdmin(admin.ModelAdmin):
     """
-    Admin view for StockMovement. Add is allowed (goes through the model's
-    normal save(), which does NOT auto-apply to Stock -- see
-    inventory.services -- so movements entered here still need the API/
-    service call to actually move stock). Change/delete are disabled: this
-    is an append-only ledger.
+    Admin view for StockMovement. Add is allowed so a user can record a
+    movement from the admin UI, but the resulting Stock balance must stay
+    in sync (BR 12.6): a plain ORM save() would only create the ledger row
+    without moving stock, so save_model applies the movement to Stock via
+    inventory.services.apply_stock_movement -- the same function every other
+    entry path uses -- so a movement recorded here updates the on-hand
+    quantity exactly like one recorded through the API. Both the ledger row
+    and the balance change are wrapped in one transaction. Change/delete are
+    disabled: this is an append-only ledger.
     """
 
     list_display = (
@@ -87,3 +93,14 @@ class StockMovementAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        # A brand-new movement goes through the model's normal save() first,
+        # then is applied to Stock -- mirroring StockMovementSerializer.create
+        # and purchasing.services.receive_goods, which both create the ledger
+        # row and call apply_stock_movement. This is what keeps the admin
+        # entry path from creating a movement without moving stock (the bug
+        # where Stock Movements updated but Stock Quantities did not).
+        super().save_model(request, obj, form, change)
+        apply_stock_movement(obj)

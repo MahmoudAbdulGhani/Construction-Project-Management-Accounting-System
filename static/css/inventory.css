@@ -1,30 +1,728 @@
-/* Inventory page (1B-1) -- built on the shared v3 dashboard look
-   (site-exact.css/v3-fixes.css/projects.css); only adds what's specific
-   to this page. The stock status pills reuse the global .status.active /
-   .status.at-risk classes. */
-.local-search input { border: 0; background: none; outline: none; flex: 1; font-family: inherit; font-size: 10px; color: inherit; }
-.filterbar select.quiet-select { min-height: 34px; padding: 0 8px; border: 1px solid #a5b9b3; border-radius: 9px; background: #f7faf8; font: inherit; font-size: 10px; color: #174b4a; }
-.filterbar .quiet-button.active { background: #08736c; border-color: #08736c; color: #f5fffc; font-weight: 800; }
+/* =========================================================
+   Inventory
+   Only Inventory-specific styles belong in this file.
+   The shared dashboard/topbar layout is intentionally untouched.
+   ========================================================= */
 
-/* 1B-2 Record-movement + movement-history dialogs (mirrors expenses.css). */
-.inventory-row-actions { display: flex; gap: 5px; }
-.inventory-row-actions button { white-space: nowrap; }
-.movement-dialog { position: fixed; inset: 0; margin: auto; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 36px); overflow: auto; border: 1px solid #94aaa4; border-radius: 15px; padding: 0; background: #e7eeea; color: #073f3c; box-shadow: 0 28px 80px #063d3c66; }
-.movement-dialog::backdrop { background: #063d3c80; backdrop-filter: blur(3px); }
-.movement-dialog form { padding: 24px; }
-.movement-dialog header, .movement-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.movement-dialog header { padding-bottom: 17px; margin-bottom: 19px; border-bottom: 1px solid #b2c3be; }
-.movement-dialog header h2 { margin: 3px 0; }
-.movement-dialog header button { border: 0; background: none; font-size: 26px; color: inherit; cursor: pointer; }
-.movement-dialog footer { justify-content: flex-end; margin-top: 20px; padding-top: 17px; border-top: 1px solid #b2c3be; }
-.movement-history-dialog { padding: 24px; }
-.movement-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-.movement-form-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 800; }
-.movement-form-grid label.full { grid-column: 1 / -1; }
-.movement-form-grid input, .movement-form-grid select, .movement-form-grid textarea { box-sizing: border-box; width: 100%; border: 1px solid #a4b7b2; border-radius: 8px; background: #f8faf8; font: inherit; }
-.movement-form-grid input, .movement-form-grid textarea { padding: 10px; }
-.movement-form-grid select { padding: 9px 8px; }
-.movement-form-grid [hidden] { display: none !important; }
-.movement-error { grid-column: 1 / -1; background: #f6ded9; color: #8b2922; border-radius: 8px; padding: 10px; white-space: pre-wrap; }
-.movement-direction { display: flex; gap: 14px; }
-.movement-direction label { flex-direction: row; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
+
+/* =========================================================
+   Page heading
+   ========================================================= */
+
+.inventory-heading-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+
+/* =========================================================
+   Inventory statistics
+   ========================================================= */
+
+.inventory-stat-grid {
+    margin-bottom: 22px;
+}
+
+
+/* =========================================================
+   Filter bar
+   ========================================================= */
+
+.filterbar {
+    position: relative;
+}
+
+/* Movements panel reuses .filterbar but sits below its own heading,
+   flush against the table instead of a panel edge. */
+.movements-filterbar {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+}
+
+.inline-date-range {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.inline-date-range label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    color: #435148;
+
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.inline-date-range input[type="date"] {
+    min-height: 38px;
+
+    padding: 7px 10px;
+
+    border: 1px solid var(--line);
+    border-radius: 8px;
+
+    background: #fbfcfb;
+    color: #18352b;
+
+    font: inherit;
+    outline: 0;
+}
+
+.inline-date-range input[type="date"]:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c1c;
+    background: #fff;
+}
+
+@media (max-width: 580px) {
+
+    .inline-date-range {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .inline-date-range label {
+        flex: 1;
+        min-width: 130px;
+    }
+
+    .inline-date-range input[type="date"] {
+        width: 100%;
+    }
+
+}
+
+
+/* =========================================================
+   Search bar
+   Native WebKit/Blink give input[type="search"] their own
+   "search field" chrome (background + inset shadow) on top of
+   whatever we style .local-search with, which reads as a faint
+   white box sitting behind the visible search bar. Strip that
+   native chrome so .local-search's own background is the only
+   one rendered.
+   ========================================================= */
+
+.local-search input[type="search"] {
+    -webkit-appearance: none;
+    appearance: none;
+
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
+.local-search input[type="search"]:focus,
+.local-search input[type="search"]:focus-visible {
+    outline: 0;
+    box-shadow: none;
+}
+
+.local-search input[type="search"]::-webkit-search-decoration,
+.local-search input[type="search"]::-webkit-search-cancel-button,
+.local-search input[type="search"]::-webkit-search-results-button,
+.local-search input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+    display: none;
+}
+
+.inventory-filter-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.icon-calendar {
+    flex-shrink: 0;
+}
+
+
+/* =========================================================
+   Filter popovers (Date range / More filters)
+   ========================================================= */
+
+.filter-popover-anchor {
+    position: relative;
+    display: inline-flex;
+}
+
+.filter-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: auto;
+    right: 0;
+    z-index: 30;
+
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    width: 240px;
+    padding: 16px;
+
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+
+    box-shadow: 0 18px 40px #0d1f1a26;
+}
+
+.filter-popover[hidden] { display: none !important; }
+
+.filter-popover label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    color: #435148;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.filter-popover input,
+.filter-popover select {
+    min-height: 38px;
+    width: 100%;
+
+    padding: 8px 10px;
+
+    border: 1px solid var(--line);
+    border-radius: 8px;
+
+    background: #fbfcfb;
+
+    font: inherit;
+    outline: 0;
+}
+
+.filter-popover input:focus,
+.filter-popover select:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c1c;
+    background: #fff;
+}
+
+.filter-popover-hint {
+    margin: -4px 0 0;
+    color: #7b8780;
+    font-size: 10.5px;
+}
+
+.filter-popover-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.filter-popover-actions .quiet-button,
+.filter-popover-actions .primary-button {
+    padding: 7px 12px;
+    font-size: 12px;
+}
+
+/* Buttons show their active filter state instead of the generic label */
+.inventory-filter-button.is-active {
+    border-color: #16857c;
+    color: #16857c;
+}
+
+
+/* =========================================================
+   Inventory table
+   ========================================================= */
+
+.inventory-table-panel {
+    overflow: visible;
+}
+
+.inventory-table td:first-child strong {
+    display: block;
+    margin-bottom: 3px;
+}
+
+.inventory-table td:first-child span {
+    display: block;
+    color: #7b8780;
+    font-size: 11px;
+}
+
+
+/* =========================================================
+   Status
+   ========================================================= */
+
+.inventory-table .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.inventory-table .status i {
+    width: 7px;
+    height: 7px;
+    display: inline-block;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.inventory-table .status.active {
+    color: #16857c;
+}
+
+.inventory-table .status.at-risk {
+    color: #c97822;
+}
+
+
+/* =========================================================
+   Pagination
+   ========================================================= */
+
+.inventory-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+
+    padding: 16px 20px;
+
+    border-top: 1px solid var(--line);
+
+    color: #68756d;
+    font-size: 12px;
+}
+
+.inventory-pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.inventory-pagination-controls [data-inventory-pages] {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.inventory-pagination-controls [data-page] {
+    min-width: 32px;
+    height: 32px;
+
+    border: 1px solid var(--line);
+    border-radius: 8px;
+
+    background: #fbfcfb;
+    color: #435148;
+
+    cursor: pointer;
+}
+
+.inventory-pagination-controls [data-page].active {
+    background: #18352b;
+    border-color: #18352b;
+    color: #f7fbf8;
+}
+
+
+/* =========================================================
+   Inventory movement dialog
+   ========================================================= */
+
+[data-inventory-dialog] {
+    width: min(680px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+
+    margin: auto;
+    padding: 0;
+
+    border: 0;
+    border-radius: 16px;
+
+    background: var(--panel);
+
+    box-shadow: 0 28px 75px #0d1f1ab8;
+
+    overflow: auto;
+}
+
+[data-inventory-dialog]::backdrop {
+    background: #13231cc4;
+    backdrop-filter: blur(3px);
+}
+
+[data-inventory-dialog] form {
+    display: grid;
+    gap: 16px;
+    padding: 26px;
+}
+
+[data-inventory-dialog] h2 {
+    margin: -26px -26px 4px;
+    padding: 22px 26px;
+
+    color: #f7fbf8;
+
+    background: linear-gradient(135deg, #18352b, #27624e);
+
+    font: 700 22px Georgia, "Times New Roman", serif;
+}
+
+
+/* =========================================================
+   Inventory form fields
+   ========================================================= */
+
+[data-inventory-fields] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+[data-inventory-fields] label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    color: #435148;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+[data-inventory-fields] input,
+[data-inventory-fields] select,
+[data-inventory-fields] textarea {
+    min-height: 40px;
+    width: 100%;
+
+    padding: 9px 11px;
+
+    border: 1px solid var(--line);
+    border-radius: 9px;
+
+    background: #fbfcfb;
+
+    font: inherit;
+    outline: 0;
+}
+
+[data-inventory-fields] textarea {
+    min-height: 82px;
+    resize: vertical;
+
+    grid-column: 1 / -1;
+}
+
+[data-inventory-fields] input:focus,
+[data-inventory-fields] select:focus,
+[data-inventory-fields] textarea:focus {
+    border-color: #16857c;
+
+    box-shadow: 0 0 0 3px #16857c1c;
+
+    background: #fff;
+}
+
+
+/* =========================================================
+   Form error
+   ========================================================= */
+
+[data-inventory-error] {
+    margin: 0;
+
+    color: #ad443b;
+
+    font-size: 12px;
+    font-weight: 650;
+}
+
+
+/* =========================================================
+   Dialog footer
+   ========================================================= */
+
+[data-inventory-dialog] form > p:last-child {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+
+    margin: 4px -26px -26px;
+    padding: 16px 26px;
+
+    border-top: 1px solid var(--line);
+
+    background: #fafbfa;
+}
+
+[data-inventory-dialog] .primary-button {
+    border: 0;
+
+    background: linear-gradient(135deg, #e5a133, #c97822);
+
+    color: #18241e;
+
+    font-weight: 800;
+}
+
+
+/* =========================================================
+   Mobile
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+    /* Only target the Inventory filter container.
+       Do NOT modify the shared .filterbar or .local-search
+       classes globally. */
+
+    .inventory-filterbar {
+        flex-wrap: wrap;
+    }
+
+    .inventory-local-search {
+        width: 100%;
+    }
+
+    .inventory-pagination {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+
+@media (max-width: 700px) {
+
+    .inventory-heading-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .inventory-heading-actions button {
+        flex: 1;
+    }
+}
+
+
+@media (max-width: 580px) {
+
+    [data-inventory-dialog] {
+        width: calc(100vw - 22px);
+    }
+
+    [data-inventory-dialog] form {
+        padding: 20px;
+    }
+
+    [data-inventory-dialog] h2 {
+        margin: -20px -20px 2px;
+        padding: 19px 20px;
+    }
+
+    [data-inventory-fields] {
+        grid-template-columns: 1fr;
+    }
+
+    [data-inventory-dialog] form > p:last-child {
+        margin: 2px -20px -20px;
+        padding: 14px 20px;
+    }
+
+    .inventory-pagination-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .filter-popover {
+        width: calc(100vw - 48px);
+    }
+}
+
+/* =========================================================
+   Stock movements
+   ========================================================= */
+
+.inventory-movements-panel {
+    margin-top: 22px;
+    overflow: hidden;
+}
+
+.inventory-movements-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+
+    padding: 20px;
+
+    border-bottom: 1px solid var(--line);
+}
+
+.inventory-movements-heading .eyebrow {
+    margin: 0 0 4px;
+}
+
+.inventory-movements-heading h2 {
+    margin: 0;
+
+    color: #18352b;
+
+    font: 700 20px Georgia, "Times New Roman", serif;
+}
+
+.inventory-movements-heading > span {
+    color: #68756d;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+
+@media (max-width: 580px) {
+
+    .inventory-movements-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+}
+
+/* =========================================================
+Inventory management
+========================================================= */
+
+.inventory-management-panel {
+margin-top: 22px;
+overflow: hidden;
+}
+
+.inventory-management-heading {
+padding: 22px 20px 16px;
+border-bottom: 1px solid var(--line);
+}
+
+.inventory-management-heading .eyebrow {
+margin: 0 0 5px;
+}
+
+.inventory-management-heading h2 {
+margin: 0;
+color: #18352b;
+font: 700 21px Georgia, "Times New Roman", serif;
+}
+
+.inventory-management-heading > div > p:last-child {
+margin: 6px 0 0;
+color: #68756d;
+font-size: 12px;
+}
+
+/* Tabs */
+
+.inventory-management-tabs {
+display: flex;
+gap: 4px;
+padding: 12px 20px 0;
+border-bottom: 1px solid var(--line);
+}
+
+.inventory-management-tab {
+padding: 10px 15px;
+border: 0;
+border-bottom: 2px solid transparent;
+background: transparent;
+color: #68756d;
+font: inherit;
+font-size: 12px;
+font-weight: 800;
+cursor: pointer;
+}
+
+.inventory-management-tab.active {
+border-bottom-color: #16857c;
+color: #18352b;
+}
+
+/* Content */
+
+.inventory-management-content {
+display: none;
+}
+
+.inventory-management-content.active {
+display: block;
+}
+
+/* Toolbar */
+
+.inventory-management-toolbar {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 12px;
+padding: 16px 20px;
+border-bottom: 1px solid var(--line);
+}
+
+.inventory-management-toolbar .local-search {
+max-width: 360px;
+width: 100%;
+}
+
+/* Row actions */
+
+.inventory-row-actions {
+display: flex;
+gap: 6px;
+align-items: center;
+}
+
+.inventory-row-actions .quiet-button {
+padding: 7px 10px;
+font-size: 11px;
+}
+
+.inventory-row-actions .danger-button {
+color: #ad443b;
+}
+
+/* Material secondary text */
+
+.inventory-management-content td:first-child span {
+display: block;
+margin-top: 3px;
+
+color: #7b8780;
+font-size: 11px;
+
+}
+
+@media (max-width: 700px) {
+
+.inventory-management-tabs {
+    overflow-x: auto;
+}
+
+.inventory-management-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+}
+
+.inventory-management-toolbar .local-search {
+    max-width: none;
+}
+
+.inventory-management-toolbar .primary-button {
+    width: 100%;
+}
+
+}
