@@ -220,6 +220,16 @@ class EmployeeListCreateTests(EmployeeAPITestBase):
         self.assertIn(str(self.employee.id), ids)
         self.assertIn(str(second.id), ids)
 
+    def test_list_employee_includes_labor_rate(self):
+        response = self.client.get("/api/employees/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(
+            item
+            for item in response.data["results"]
+            if item["id"] == str(self.employee.id)
+        )
+        self.assertEqual(row["labor_rate"], "45.00")
+
     def test_search_employees_by_name(self):
         make_employee(
             name="Bravo Staff",

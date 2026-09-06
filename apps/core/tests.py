@@ -452,6 +452,74 @@ class WorkforcePageRenderTests(WithUsersTableMixin, TestCase):
         self.assertIn("data-workforce-rows", content)
         self.assertIn("workforce-search-input", content)
 
+    def test_accountant_cannot_open_workforce_page(self):
+        accountant = AppUser.objects.create(
+            username="workforce_accountant", email="workforce-accountant@example.com",
+            password_hash="x", first_name="W", last_name="A", role="ACCOUNTANT",
+        )
+        accountant.set_password("pass12345")
+        accountant.save(update_fields=["password_hash"])
+        self.client.post(
+            "/accounts/login/",
+            {"username": "workforce_accountant", "password": "pass12345"},
+        )
+        response = self.client.get("/workforce/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/dashboard/")
+
+    def test_page_has_workforce_crud_and_assignment_hooks(self):
+        owner = AppUser.objects.create(
+            username="workforce_hooks", email="workforce-hooks@example.com",
+            password_hash="x", first_name="W", last_name="H", role="OWNER",
+        )
+        owner.set_password("pass12345")
+        owner.save(update_fields=["password_hash"])
+        self.client.post(
+            "/accounts/login/", {"username": "workforce_hooks", "password": "pass12345"},
+        )
+        content = self.client.get("/workforce/").content.decode()
+        for hook in [
+            "data-workforce-page-error", "data-workforce-add",
+            "data-employee-form-dialog", "data-employee-form", "data-employee-form-error",
+            "data-employee-detail-dialog", "data-employee-edit", "data-employee-delete",
+            "data-assignment-state", "data-assignment-new", "data-assignment-dialog",
+            "data-assignment-form", "data-assignment-error", "data-delete-dialog",
+        ]:
+            self.assertIn(hook, content)
+        for field in [
+            "name", "employee_number", "phone", "email", "position", "department",
+            "labor_rate", "employment_status", "project_id", "role_on_project",
+            "assigned_at", "released_at",
+        ]:
+            self.assertIn(f'name="{field}"', content)
+
+    def test_page_has_no_fabricated_workforce_data(self):
+        owner = AppUser.objects.create(
+            username="workforce_empty", email="workforce-empty@example.com",
+            password_hash="x", first_name="W", last_name="E", role="OWNER",
+        )
+        owner.set_password("pass12345")
+        owner.save(update_fields=["password_hash"])
+        self.client.post(
+            "/accounts/login/", {"username": "workforce_empty", "password": "pass12345"},
+        )
+        content = self.client.get("/workforce/").content.decode()
+        self.assertIn("Loading workforce…", content)
+        self.assertNotIn("EMP-0001", content)
+        self.assertNotIn("Site Engineer", content)
+        self.assertNotIn("$", content)
+
+    def test_js_wires_existing_workforce_endpoints_without_prompts(self):
+        js = (settings.BASE_DIR / "static/js/workforce.js").read_text(encoding="utf-8")
+        for token in [
+            "/api/employees/", "/api/projects/projects/", '"POST"',
+            '"PATCH"', '"DELETE"', "data-assignment-retry",
+            "data-workforce-retry", "assignmentErrors",
+        ]:
+            self.assertIn(token, js)
+        self.assertNotIn("prompt(", js)
+        self.assertNotIn("/api/workforce/", js)
+
 
 class DocumentsPageRenderTests(TestCase):
     """The Documents page is server-rendered HTML whose table, metrics, and
@@ -837,3 +905,175 @@ class RoleRoutingTests(WithUsersTableMixin, TestCase):
             with self.subTest(url=url):
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 200)
+
+
+class OwnerDashboardPageRenderTests(WithUsersTableMixin, TestCase):
+    """The owner workspace dashboard is server-rendered HTML whose metric
+    tiles, portfolio donut, milestones, and projects table are filled at
+    runtime by overview.js from the real /api/projects/ endpoints (projects
+    list, portfolio budget summary, phases) plus /api/invoicing/
+    client-invoices for A/R. No figures are baked into the template --
+    every metric starts at — and every list at its loading row. These tests
+    verify the rendered structure and hooks only; they do NOT exercise
+    browser-side fetch logic.
+
+    /dashboard/ routes to the owner template via request.user.is_accountant
+    (apps.core.views.dashboard), so these tests need a real AppUser with
+    role OWNER, mirroring RoleRoutingTests."""
+
+    def setUp(self):
+        self.owner = AppUser.objects.create(
+            username="owner_overview", email="owner_overview@example.com", password_hash="x",
+            first_name="O", last_name="W", role="OWNER",
+        )
+        self.owner.set_password("owner-pass-123")
+        self.owner.save(update_fields=["password_hash"])
+
+    def _login(self):
+        self.client.post(
+            "/accounts/login/",
+            {"username": "owner_overview", "password": "owner-pass-123"},
+            follow=False,
+        )
+
+    def test_redirects_anonymous_user_to_login(self):
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_page_renders_for_authenticated_user(self):
+        self._login()
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "dashboard/overview.html")
+        content = response.content.decode()
+        for hook in [
+            "overview.js",
+            'data-ov-metric="active-projects"', 'data-ov-metric="portfolio-value"',
+            'data-ov-metric="actual-cost"', 'data-ov-metric="outstanding-ar"',
+            "data-ov-attention-count", "data-ov-attention-text",
+            'data-ov-donut="portfolio"', "data-ov-spent-pct",
+            "data-ov-approved", "data-ov-actual", "data-ov-remaining",
+            "data-ov-portfolio-note", "data-ov-milestones",
+            "data-project-rows", "Loading projects…",
+        ]:
+            self.assertIn(hook, content)
+
+    def test_page_has_no_fabricated_figures(self):
+        # The dashboard metrics are filled at runtime from real APIs. The
+        # template must ship empty hooks (— and Loading…) with no hardcoded
+        # dollar figures, fake milestone names, or trend claims.
+        self._login()
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        for metric in ["active-projects", "portfolio-value", "actual-cost", "outstanding-ar"]:
+            self.assertIn(f'data-ov-metric="{metric}">—</div>', content)
+        self.assertIn("Loading…", content)
+        for fabricated in [
+            "$6.42M", "$3.18M", "$428K", "$214K", "$186K", "$52K",
+            "$96K", "$452K", "$4.31M", "$1.13M", "$94K", "$58K",
+            "Excavation", "Foundation pour", "Structural framing",
+            "Interior fit-out", "On track", "under plan", "above plan",
+        ]:
+            self.assertNotIn(fabricated, content)
+
+    def test_js_wires_real_overview_endpoints(self):
+        # The renderer logic lives in overview.js, so assert the bundle
+        # targets the real APIs the widgets derive from and carries the
+        # dashboard-local overdue rule.
+        js = (settings.BASE_DIR / "static/js/overview.js").read_text(encoding="utf-8")
+        for token in [
+            "/api/projects/projects/", "/api/projects/budgets/portfolio-summary/",
+            "/api/projects/phases/", "/api/invoicing/client-invoices/",
+            "data-ov-metric", "data-ov-donut", "data-ov-milestones",
+            "conic-gradient", "PARTIALLY_PAID", "outstanding_balance",
+        ]:
+            self.assertIn(token, js)
+        # No fabricated dashboard figure or fake API hidden in the bundle.
+        self.assertNotIn("/api/dashboard/", js)
+        self.assertNotIn("mock", js)
+        self.assertNotIn("$6.42M", js)
+
+
+class AccountantDashboardPageRenderTests(WithUsersTableMixin, TestCase):
+    """The accountant finance dashboard is server-rendered HTML whose metric
+    tiles, cash-flow donut, receivables list, and recent-payments table are
+    filled at runtime by overview.js from the real invoicing/payments/
+    expenses APIs. Metrics render as — and lists at their loading rows; the
+    recent-payments table columns are Receipt | Client | Date | Method |
+    Amount with no hardcoded rows. These tests verify the rendered structure
+    and hooks only (browser-side aggregation is outside the test client).
+
+    Unlike the owner dashboard, /dashboard/ routes accountants to
+    accountant_overview.html by request.user.is_accountant, so these tests
+    need a real AppUser with role ACCOUNTANT, mirroring RoleRoutingTests."""
+
+    def setUp(self):
+        self.accountant = AppUser.objects.create(
+            username="acct_overview", email="acct_overview@example.com", password_hash="x",
+            first_name="A", last_name="C", role="ACCOUNTANT",
+        )
+        self.accountant.set_password("accountant-pass-123")
+        self.accountant.save(update_fields=["password_hash"])
+
+    def _login(self):
+        self.client.post(
+            "/accounts/login/",
+            {"username": "acct_overview", "password": "accountant-pass-123"},
+            follow=False,
+        )
+
+    def test_redirects_anonymous_user_to_login(self):
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_page_renders_for_accountant(self):
+        self._login()
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "dashboard/accountant_overview.html")
+        content = response.content.decode()
+        for hook in [
+            "overview.js",
+            'data-ov-metric="invoiced-mtd"', 'data-ov-metric="payments-received"',
+            'data-ov-metric="outstanding-ar"', 'data-ov-metric="expenses-mtd"',
+            "data-ov-attention-count", "data-ov-attention-text",
+            'data-ov-donut="cash"', "data-ov-collected-pct",
+            "data-ov-received", "data-ov-cash-outstanding",
+            "data-ov-cash-expenses", "data-ov-cash-note",
+            "data-ov-receivables", "data-ov-recent-rows",
+            "Loading receipts…",
+        ]:
+            self.assertIn(hook, content)
+
+    def test_page_has_no_fabricated_figures(self):
+        self._login()
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        for metric in ["invoiced-mtd", "payments-received", "outstanding-ar", "expenses-mtd"]:
+            self.assertIn(f'data-ov-metric="{metric}">—</div>', content)
+        for header in ["<th>Receipt</th>", "<th>Client</th>", "<th>Date</th>", "<th>Method</th>", "<th>Amount</th>"]:
+            self.assertIn(header, content)
+        for fabricated in [
+            "$6.42M", "$3.18M", "$428K", "$214K", "$186K", "$52K",
+            "$96K", "$452K", "$4.31M", "$1.13M", "$94K", "$58K",
+            "INV-", "RCPT-", "<td><strong>", "invoiced_mtd",
+        ]:
+            self.assertNotIn(fabricated, content)
+
+    def test_js_wires_accountant_endpoints(self):
+        # The accountant widgets derive from the invoicing/payments/expenses
+        # APIs in overview.js; assert the bundle targets them.
+        js = (settings.BASE_DIR / "static/js/overview.js").read_text(encoding="utf-8")
+        for token in [
+            "/api/invoicing/client-invoices/",
+            "/api/payments/payments/?direction=INCOMING",
+            "/api/payments/receipts/",
+            "/api/expenses/expenses/?status=PENDING",
+            "data-ov-recent-rows", "data-ov-receivables",
+            "receipt_date", "invoice_number", "direction=INCOMING",
+        ]:
+            self.assertIn(token, js)
