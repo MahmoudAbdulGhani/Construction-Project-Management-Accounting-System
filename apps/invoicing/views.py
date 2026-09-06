@@ -10,16 +10,31 @@ from rest_framework.response import Response
 
 from construction.filtering import filter_date_range
 
-from .models import ClientInvoice, ClientInvoiceItem, SupplierInvoice, SupplierInvoiceItem
+from .models import (
+    ClientInvoice,
+    ClientInvoiceItem,
+    ContractorInvoice,
+    ContractorInvoiceItem,
+    SupplierInvoice,
+    SupplierInvoiceItem,
+)
 from .serializers import (
     ClientInvoiceItemSerializer,
     ClientInvoiceSerializer,
+    ContractorInvoiceItemSerializer,
+    ContractorInvoiceSerializer,
     SupplierInvoiceItemSerializer,
     SupplierInvoiceSerializer,
     apply_client_transition,
+    apply_contractor_transition,
     apply_transition,
 )
-from .services import recalculate_client_invoice_totals, recalculate_invoice_totals
+from .services import (
+    recalculate_client_invoice_totals,
+    recalculate_contractor_invoice_totals,
+    recalculate_invoice_totals,
+    sync_overdue_statuses,
+)
 
 
 class SupplierInvoiceViewSet(viewsets.ModelViewSet):
@@ -37,6 +52,9 @@ class SupplierInvoiceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'created_at']
 
     def get_queryset(self):
+        # Derived state: flip any billed invoice past its due date to
+        # OVERDUE before serving the page (see services.sync_overdue_statuses).
+        sync_overdue_statuses()
         queryset = super().get_queryset()
         params = self.request.query_params
 
@@ -137,6 +155,7 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'created_at']
 
     def get_queryset(self):
+        sync_overdue_statuses()
         queryset = super().get_queryset()
         params = self.request.query_params
 
@@ -222,3 +241,101 @@ class ClientInvoiceItemViewSet(viewsets.ModelViewSet):
         invoice = instance.client_invoice
         instance.delete()
         recalculate_client_invoice_totals(invoice)
+
+
+class ContractorInvoiceViewSet(viewsets.ModelViewSet):
+    """
+    CRUD + status-transition API for contractor invoice (Accounts
+    Payable) headers. Same shape as SupplierInvoiceViewSet.
+
+    Filterable by ?contractor=<uuid>, ?status=, and invoice date range.
+    """
+
+    queryset = ContractorInvoice.objects.prefetch_related('items').all()
+    serializer_class = ContractorInvoiceSerializer
+    search_fields = ['invoice_number']
+    ordering_fields = ['invoice_date', 'due_date', 'total_amount', 'created_at']
+
+    def get_queryset(self):
+        sync_overdue_statuses()
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        contractor_id = params.get('contractor')
+        if contractor_id:
+            queryset = queryset.filter(contractor_id=contractor_id)
+
+        status_param = params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param.upper())
+
+        queryset = filter_date_range(queryset, params, 'invoice_date')
+
+        return queryset
+
+    def _require_draft(self, invoice):
+        if invoice.status != ContractorInvoice.Status.DRAFT:
+            raise PermissionDenied(
+                f"Cannot edit a contractor invoice once it is {invoice.get_status_display()}."
+            )
+
+    def perform_update(self, serializer):
+        self._require_draft(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_draft(instance)
+        instance.delete()
+
+    @action(detail=True, methods=['post'])
+    def mark_sent(self, request, pk=None):
+        """POST /api/invoicing/contractor-invoices/{id}/mark_sent/ -- DRAFT -> SENT."""
+        invoice = apply_contractor_transition(self.get_object(), ContractorInvoice.Status.SENT)
+        return Response(self.get_serializer(invoice).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """POST /api/invoicing/contractor-invoices/{id}/cancel/ -- DRAFT/SENT -> CANCELLED."""
+        invoice = apply_contractor_transition(self.get_object(), ContractorInvoice.Status.CANCELLED)
+        return Response(self.get_serializer(invoice).data)
+
+
+class ContractorInvoiceItemViewSet(viewsets.ModelViewSet):
+    """
+    CRUD API for contractor invoice line items.
+
+    Filterable by ?contractor_invoice=<uuid>. Create/update/destroy are
+    all blocked once the parent invoice has left DRAFT.
+    """
+
+    queryset = ContractorInvoiceItem.objects.select_related('tax_rate', 'contractor_invoice').all()
+    serializer_class = ContractorInvoiceItemSerializer
+    search_fields = ['description']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        invoice_id = self.request.query_params.get('contractor_invoice')
+        if invoice_id:
+            queryset = queryset.filter(contractor_invoice_id=invoice_id)
+        return queryset
+
+    def _require_draft(self, invoice):
+        if invoice.status != ContractorInvoice.Status.DRAFT:
+            raise PermissionDenied(
+                f"Cannot modify items on a contractor invoice once it is {invoice.get_status_display()}."
+            )
+
+    def perform_create(self, serializer):
+        self._require_draft(serializer.validated_data['contractor_invoice'])
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._require_draft(serializer.instance.contractor_invoice)
+        serializer.save()
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        self._require_draft(instance.contractor_invoice)
+        invoice = instance.contractor_invoice
+        instance.delete()
+        recalculate_contractor_invoice_totals(invoice)

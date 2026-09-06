@@ -51,7 +51,7 @@
         <td><strong>${esc(r.receipt_number)}</strong></td>
         <td>${esc(r.receipt_date)}</td>
         <td>${esc(r.payment_number)}</td>
-        <td>${esc(r.client_name || r.supplier_name || "—")}</td>
+        <td>${esc(r.payee_name || r.client_name || r.supplier_name || r.contractor_name || r.employee_name || "—")}</td>
         <td>${esc(r.payment_method)}</td>
         <td>${fmtMoney(r.amount)}</td>
         <td><a class="receipt-download" href="${API}${r.id}/download/">Download PDF</a></td>

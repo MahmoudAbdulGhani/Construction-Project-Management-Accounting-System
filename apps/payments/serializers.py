@@ -4,12 +4,17 @@ Accounts Payable slice (CPMAS-35).
 """
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from contractors.models import Contractor
 from employees.models import Employee
 
 from .models import Payment, PaymentAllocation, Receipt
-from .services import allocate_payment, unallocated_amount
+from .services import (
+    allocate_payment,
+    create_payment_with_generated_number,
+    unallocated_amount,
+)
 
 # Renders a SerializerMethodField Decimal the same way a real
 # DecimalField would (a "0.00"-style JSON string) -- see
@@ -33,7 +38,14 @@ class PaymentSerializer(serializers.ModelSerializer):
     payee_name = serializers.SerializerMethodField()
     payee_type = serializers.SerializerMethodField()
     allocatable = serializers.SerializerMethodField()
+    has_receipt = serializers.SerializerMethodField()
     unallocated_amount = serializers.SerializerMethodField()
+    # Optional: a blank payment_number gets auto-generated
+    # (PAY-<year>-<seq>) by create_payment_with_generated_number on create.
+    payment_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=100,
+        validators=[UniqueValidator(queryset=Payment.objects.all())],
+    )
 
     class Meta:
         model = Payment
@@ -41,16 +53,18 @@ class PaymentSerializer(serializers.ModelSerializer):
             'id', 'payment_number', 'payment_date', 'amount', 'direction',
             'payment_method', 'client', 'client_name', 'supplier', 'supplier_name',
             'employee_id', 'employee_name', 'contractor_id', 'contractor_name',
-            'payee_name', 'payee_type', 'allocatable',
+            'payee_name', 'payee_type', 'allocatable', 'has_receipt',
             'reference', 'notes', 'created_by', 'unallocated_amount', 'created_at',
         ]
         read_only_fields = ['id', 'created_by', 'created_at']
 
+    def create(self, validated_data):
+        return create_payment_with_generated_number(validated_data)
+
     def validate_payment_number(self, value):
-        value = value.strip()
-        if not value:
-            raise serializers.ValidationError("This field may not be blank.")
-        return value
+        # Blank is fine -- create() generates one. Only trim here; reject
+        # nothing, so the auto-generation path isn't tripped by whitespace.
+        return (value or '').strip()
 
     def validate_payment_method(self, value):
         value = value.strip()
@@ -90,7 +104,13 @@ class PaymentSerializer(serializers.ModelSerializer):
         return None
 
     def get_allocatable(self, obj):
-        return bool(obj.client_id or obj.supplier_id)
+        # Clients and suppliers fund client/supplier invoices; contractors
+        # now fund contractor invoices too. Only employee payments are
+        # direct (wages/salary have no invoice to allocate against).
+        return bool(obj.client_id or obj.supplier_id or obj.contractor_id)
+
+    def get_has_receipt(self, obj):
+        return hasattr(obj, 'receipt')
 
     def validate(self, attrs):
         direction = attrs.get('direction')
@@ -137,16 +157,18 @@ class PaymentAllocationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PaymentAllocation
-        fields = ['id', 'payment', 'client_invoice', 'supplier_invoice', 'allocated_amount']
+        fields = ['id', 'payment', 'client_invoice', 'supplier_invoice', 'contractor_invoice', 'allocated_amount']
 
     def validate(self, attrs):
         # Mirrors the live database's CHECK constraint (defense in
         # depth, same pattern as TransactionLine's mirrored CHECKs).
         client_invoice = attrs.get('client_invoice')
         supplier_invoice = attrs.get('supplier_invoice')
-        if bool(client_invoice) == bool(supplier_invoice):
+        contractor_invoice = attrs.get('contractor_invoice')
+        set_count = sum(bool(x) for x in (client_invoice, supplier_invoice, contractor_invoice))
+        if set_count != 1:
             raise serializers.ValidationError(
-                "Exactly one of client_invoice or supplier_invoice must be set."
+                "Exactly one of client_invoice, supplier_invoice, or contractor_invoice must be set."
             )
         if attrs.get('allocated_amount') is not None and attrs['allocated_amount'] <= 0:
             raise serializers.ValidationError({'allocated_amount': "Allocation amount must be positive."})
@@ -154,7 +176,11 @@ class PaymentAllocationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         payment = validated_data['payment']
-        invoice = validated_data.get('client_invoice') or validated_data.get('supplier_invoice')
+        invoice = (
+            validated_data.get('client_invoice')
+            or validated_data.get('supplier_invoice')
+            or validated_data.get('contractor_invoice')
+        )
         amount = validated_data['allocated_amount']
         try:
             return allocate_payment(payment, invoice, amount)
@@ -167,30 +193,53 @@ class ReceiptSerializer(serializers.ModelSerializer):
     Serializer for Receipt. Create-only at the viewset level (proof of
     receipt, immutable once issued).
 
-    client_name/supplier_name/payment_method are read-only, derived
-    through the receipt's payment -- BRD 5.19 lists "Client/supplier"
-    and "Payment method" as receipt fields, but the schema's receipts
-    table has no such columns of its own (a receipt is always one-to-
-    one with a payment, so nothing would be gained by duplicating them
-    here). Currency is in BRD 5.19 too but is out of scope for this
-    version (BRD 3.2 lists multi-currency as a future enhancement).
+    Issued for either payment direction -- a receipt documents money
+    received FROM a client or paid TO a supplier/employee/contractor (see
+    PaymentViewSet.perform_create, which auto-issues receipts on payment
+    creation). client_name/supplier_name/contractor_name/employee_name/
+    payment_method are read-only, derived through the receipt's payment --
+    BRD 5.19 lists "Client/supplier" and "Payment method" as receipt
+    fields, but the schema's receipts table has no such columns of its
+    own (a receipt is always one-to-one with a payment, so nothing would
+    be gained by duplicating them here). Currency is in BRD 5.19 too but
+    is out of scope for this version (BRD 3.2 lists multi-currency as a
+    future enhancement).
     """
 
     payment_number = serializers.CharField(source='payment.payment_number', read_only=True)
     client_name = serializers.CharField(source='payment.client.name', read_only=True, default=None)
     supplier_name = serializers.CharField(source='payment.supplier.name', read_only=True, default=None)
+    contractor_name = serializers.SerializerMethodField()
+    employee_name = serializers.SerializerMethodField()
+    payee_name = serializers.SerializerMethodField()
     payment_method = serializers.CharField(source='payment.payment_method', read_only=True)
 
     class Meta:
         model = Receipt
         fields = [
-            'id', 'payment', 'payment_number', 'client_name', 'supplier_name', 'payment_method',
+            'id', 'payment', 'payment_number', 'client_name', 'supplier_name',
+            'contractor_name', 'employee_name', 'payee_name', 'payment_method',
             'receipt_number', 'receipt_date', 'amount', 'reference', 'created_at',
         ]
 
+    def get_contractor_name(self, obj):
+        if not obj.payment.contractor_id:
+            return None
+        return Contractor.objects.filter(pk=obj.payment.contractor_id).values_list('name', flat=True).first()
+
+    def get_employee_name(self, obj):
+        if not obj.payment.employee_id:
+            return None
+        return Employee.objects.filter(pk=obj.payment.employee_id).values_list('name', flat=True).first()
+
+    def get_payee_name(self, obj):
+        return (
+            obj.payment.client.name if obj.payment.client_id else
+            obj.payment.supplier.name if obj.payment.supplier_id else
+            self.get_employee_name(obj) or self.get_contractor_name(obj)
+        )
+
     def validate_payment(self, payment):
-        if payment.direction != Payment.Direction.INCOMING:
-            raise serializers.ValidationError("A receipt can only be issued for an INCOMING payment.")
         if hasattr(payment, 'receipt'):
             raise serializers.ValidationError("This payment already has a receipt.")
         return payment
