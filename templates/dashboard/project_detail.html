@@ -1,97 +1,771 @@
 {% extends "dashboard/base_dashboard.html" %}
 {% load static %}
-{% block title %}Cedar Heights Residence | Cedar Control{% endblock %}
+
+{% block title %}Project | Cedar Control{% endblock %}
+
 {% block dashboard_content %}
-<div data-project-detail data-project-id="{{ project.pk }}">
-  <div class="breadcrumbs"><a href="{% url 'projects' %}">Projects</a><i data-lucide="chevron-right"></i><span data-project-code>PRJ-024</span></div>
 
-  <section class="project-title">
-    <div class="project-badge" data-project-initials>CH</div>
-    <div>
-      <div class="title-row"><h1 data-project-name>Cedar Heights Residence</h1><span class="status active" data-project-status><i></i>Active</span></div>
-      <p data-project-meta>PRJ-024 · Levant Properties · Beirut, Lebanon</p>
-    </div>
-    <div class="project-actions"><button class="quiet-button" data-action="edit-project">Edit project</button><button class="primary-button" data-action="add-record"><i data-lucide="plus"></i>Add record</button><div class="project-status-actions" data-project-status-actions></div></div>
-  </section>
+<div
+    data-project-detail
+    data-project-id="{{ project.pk }}"
+    data-project-loading
+>
 
-  <nav class="project-tabs">
-    <button class="active" data-project-tab="overview">Overview</button><button data-project-tab="phases">Phases</button><button data-project-tab="budget">Budget</button><button data-project-tab="procurement">Procurement</button><button data-project-tab="documents">Documents</button>
-  </nav>
+    <!-- =========================================================
+         Breadcrumbs
+         ========================================================= -->
 
-  <section data-project-panel="overview">
-    <div class="metric-grid">
-      <article class="metric-card"><div class="metric-top"><span>Contract value</span><i><span data-lucide="briefcase-business"></span></i></div><div class="metric-value" data-contract-value>$2.26M</div><div class="metric-foot"><span>Approved client value</span><em>+4.2%</em></div></article>
-      <article class="metric-card"><div class="metric-top"><span>Approved budget</span><i><span data-lucide="circle-dollar-sign"></span></i></div><div class="metric-value" data-budget-total>$1.84M</div><div class="metric-foot"><span>Including change orders</span><em>81%</em></div></article>
-      <article class="metric-card"><div class="metric-top"><span>Actual cost</span><i><span data-lucide="trending-down"></span></i></div><div class="metric-value" data-actual-total>$1.12M</div><div class="metric-foot"><span>$720K remaining</span><em>61%</em></div></article>
-      <article class="metric-card"><div class="metric-top"><span>Forecast profit</span><i><span data-lucide="trending-up"></span></i></div><div class="metric-value">$476K</div><span data-remaining-total hidden></span><div class="metric-foot"><span>21.1% projected margin</span><em>Healthy</em></div></article>
+    <div class="breadcrumbs">
+        <a href="{% url 'projects' %}">Projects</a>
+        <i data-lucide="chevron-right"></i>
+        <span data-project-code>—</span>
     </div>
 
-    <section class="project-overview-grid">
-      <article class="panel">
-        <div class="panel-head"><div><h2>Overall progress</h2><p>Physical completion by phase</p></div><strong class="big-percent" data-project-progress>68%</strong></div>
-        <div class="timeline-bar"><span data-project-progress-bar style="width:68%"></span></div><div class="timeline-labels"><span>04 Mar 2026</span><span>18 Dec 2026</span></div>
-        <div class="phase-preview">
-          <div><div><strong>Site preparation</strong><span>Rami Khalil</span></div><div class="progress-cell"><div><div style="width:100%"></div></div><b>100%</b></div></div>
-          <div><div><strong>Foundation</strong><span>Nour Hamdan</span></div><div class="progress-cell"><div><div style="width:100%"></div></div><b>100%</b></div></div>
-          <div><div><strong>Structural works</strong><span>Fadi Saad</span></div><div class="progress-cell"><div><div style="width:82%"></div></div><b>82%</b></div></div>
-          <div><div><strong>MEP installation</strong><span>Maya Daher</span></div><div class="progress-cell"><div><div style="width:46%"></div></div><b>46%</b></div></div>
+
+    <!-- =========================================================
+         Project Header
+         ========================================================= -->
+
+    <section class="project-title">
+
+        <div class="project-badge" data-project-initials>
+            —
         </div>
-        <button class="text-button">View detailed plan <i data-lucide="chevron-right"></i></button>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><div><h2>Project health</h2><p>Current control indicators</p></div></div>
-        <div class="health-row"><div class="health-icon green"><i data-lucide="clipboard-check"></i></div><div><strong>Budget</strong><span>6.8% below planned curve</span></div><em class="green">On track</em></div>
-        <div class="health-row"><div class="health-icon amber"><i data-lucide="clipboard-check"></i></div><div><strong>Schedule</strong><span>MEP phase is 4 days behind</span></div><em class="amber">Watch</em></div>
-        <div class="health-row"><div class="health-icon green"><i data-lucide="clipboard-check"></i></div><div><strong>Receivables</strong><span>No overdue client invoices</span></div><em class="green">Healthy</em></div>
-        <div class="health-row"><div class="health-icon green"><i data-lucide="clipboard-check"></i></div><div><strong>Safety</strong><span>19 days without incident</span></div><em class="green">Good</em></div>
-      </article>
+
+        <div>
+            <div class="title-row">
+
+                <h1 data-project-name>
+                    Loading project…
+                </h1>
+
+                <span class="status" data-project-status>
+                    <i></i>
+                    Loading
+                </span>
+
+            </div>
+
+            <p data-project-meta>
+                Loading project details…
+            </p>
+        </div>
+
+
+        <!-- Project actions -->
+
+        <div class="project-actions">
+
+            <button
+                type="button"
+                class="quiet-button"
+                data-action="edit-project"
+            >
+                Edit project
+            </button>
+
+
+            <button
+                type="button"
+                class="primary-button"
+                data-action="add-record"
+            >
+                <i data-lucide="plus"></i>
+                Add record
+            </button>
+
+
+            <!-- Lifecycle actions dropdown -->
+
+            <div
+                class="project-actions-menu"
+                data-project-actions-menu
+            >
+
+                <button
+                    type="button"
+                    class="quiet-button actions-menu-trigger"
+                    data-action-menu-trigger
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                >
+                    Actions
+                    <i data-lucide="chevron-down"></i>
+                </button>
+
+
+                <div
+                    class="actions-dropdown"
+                    data-action-menu
+                    hidden
+                >
+                    <!-- Filled by JavaScript -->
+                </div>
+
+            </div>
+
+        </div>
+
     </section>
 
-    <section class="project-overview-grid">
-      <article class="panel"><div class="panel-head"><div><h2>Recent activity</h2><p>Latest project records</p></div></div>
-        <div class="activity"><i><span data-lucide="package-check"></span></i><div><strong>Goods receipt GR-0098 posted</strong><span>80 cement bags · 2 hours ago</span></div><i data-lucide="chevron-right"></i></div>
-        <div class="activity"><i><span data-lucide="file-text"></span></i><div><strong>Supplier invoice INV-443 added</strong><span>Mediterranean Steel · Yesterday</span></div><i data-lucide="chevron-right"></i></div>
-        <div class="activity"><i><span data-lucide="clipboard-check"></span></i><div><strong>Phase progress updated to 82%</strong><span>Structural works · 26 Aug</span></div><i data-lucide="chevron-right"></i></div>
-      </article>
-      <article class="panel"><div class="panel-head"><div><h2>Project team</h2><p>Key responsibility</p></div></div>
-        <div class="team-row"><div class="avatar">RK</div><div><strong>Rami Khalil</strong><span>Project manager</span></div><i data-lucide="ellipsis"></i></div>
-        <div class="team-row"><div class="avatar">NH</div><div><strong>Nour Hamdan</strong><span>Site manager</span></div><i data-lucide="ellipsis"></i></div>
-        <div class="team-row"><div class="avatar">MD</div><div><strong>Maya Daher</strong><span>MEP engineer</span></div><i data-lucide="ellipsis"></i></div>
-      </article>
+
+    <!-- =========================================================
+         Tabs
+         ========================================================= -->
+
+    <nav class="project-tabs">
+
+        <button
+            type="button"
+            class="active"
+            data-project-tab="overview"
+        >
+            Overview
+        </button>
+
+        <button
+            type="button"
+            data-project-tab="phases"
+        >
+            Phases
+        </button>
+
+        <button
+            type="button"
+            data-project-tab="budget"
+        >
+            Budget
+        </button>
+
+        <button
+            type="button"
+            data-project-tab="change-orders"
+        >
+            Change Orders
+        </button>
+
+        <button
+            type="button"
+            data-project-tab="documents"
+        >
+            Documents
+        </button>
+
+    </nav>
+
+
+    <!-- =========================================================
+         OVERVIEW
+         ========================================================= -->
+
+    <section
+        data-project-panel="overview"
+    >
+
+        <!-- =====================================================
+             Metrics
+             ===================================================== -->
+
+        <div class="metric-grid">
+
+            <article class="metric-card">
+
+                <div class="metric-top">
+                    <span>Contract value</span>
+
+                    <i>
+                        <span data-lucide="briefcase-business"></span>
+                    </i>
+                </div>
+
+                <div
+                    class="metric-value"
+                    data-contract-value
+                >
+                    —
+                </div>
+
+                <div class="metric-foot">
+                    <span>Approved client value</span>
+                    <em data-contract-label>—</em>
+                </div>
+
+            </article>
+
+
+            <article class="metric-card">
+
+                <div class="metric-top">
+                    <span>Approved budget</span>
+
+                    <i>
+                        <span data-lucide="circle-dollar-sign"></span>
+                    </i>
+                </div>
+
+                <div
+                    class="metric-value"
+                    data-budget-total
+                >
+                    —
+                </div>
+
+                <div class="metric-foot">
+                    <span>Approved budget versions</span>
+                    <em data-budget-status-label>—</em>
+                </div>
+
+            </article>
+
+
+            <article class="metric-card">
+
+                <div class="metric-top">
+                    <span>Actual cost</span>
+
+                    <i>
+                        <span data-lucide="trending-down"></span>
+                    </i>
+                </div>
+
+                <div
+                    class="metric-value"
+                    data-actual-total
+                >
+                    —
+                </div>
+
+                <div class="metric-foot">
+
+                    <span data-remaining-label>
+                        —
+                    </span>
+
+                    <em data-remaining-total-label>
+                        —
+                    </em>
+
+                </div>
+
+            </article>
+
+
+            <article class="metric-card">
+
+                <div class="metric-top">
+                    <span>Forecast profit</span>
+
+                    <i>
+                        <span data-lucide="trending-up"></span>
+                    </i>
+                </div>
+
+                <div
+                    class="metric-value"
+                    data-forecast-profit
+                >
+                    —
+                </div>
+
+                <div class="metric-foot">
+
+                    <span data-forecast-margin>
+                        —
+                    </span>
+
+                    <em data-forecast-health>
+                        —
+                    </em>
+
+                </div>
+
+            </article>
+
+        </div>
+
+
+        <!-- =====================================================
+             Progress + Health
+             ===================================================== -->
+
+        <section class="project-overview-grid">
+
+
+            <!-- Overall progress -->
+
+            <article class="panel">
+
+                <div class="panel-head">
+
+                    <div>
+                        <h2>Overall progress</h2>
+                        <p>Physical completion by phase</p>
+                    </div>
+
+                    <strong
+                        class="big-percent"
+                        data-project-progress
+                    >
+                        0%
+                    </strong>
+
+                </div>
+
+
+                <div class="timeline-bar">
+                    <span
+                        data-project-progress-bar
+                        style="width:0%"
+                    ></span>
+                </div>
+
+
+                <div class="timeline-labels">
+
+                    <span data-project-start>
+                        —
+                    </span>
+
+                    <span data-project-completion>
+                        —
+                    </span>
+
+                </div>
+
+
+                <div
+                    class="phase-preview"
+                    data-project-phase-preview
+                >
+                    <div class="overview-empty">
+                        No phases available.
+                    </div>
+                </div>
+
+
+                <button
+                    type="button"
+                    class="text-button"
+                    data-project-tab-link="phases"
+                >
+                    View detailed plan
+                    <i data-lucide="chevron-right"></i>
+                </button>
+
+            </article>
+
+
+            <!-- Project health -->
+
+            <article class="panel">
+
+                <div class="panel-head">
+
+                    <div>
+                        <h2>Project health</h2>
+                        <p>Current control indicators</p>
+                    </div>
+
+                </div>
+
+
+                <div class="health-row">
+
+                    <div class="health-icon green">
+                        <i data-lucide="clipboard-check"></i>
+                    </div>
+
+                    <div>
+                        <strong>Budget</strong>
+                        <span data-health-budget>
+                            Awaiting budget data
+                        </span>
+                    </div>
+
+                    <em
+                        class="green"
+                        data-health-budget-status
+                    >
+                        —
+                    </em>
+
+                </div>
+
+
+                <div class="health-row">
+
+                    <div class="health-icon green">
+                        <i data-lucide="calendar-check"></i>
+                    </div>
+
+                    <div>
+                        <strong>Schedule</strong>
+                        <span data-health-schedule>
+                            Awaiting phase data
+                        </span>
+                    </div>
+
+                    <em
+                        class="green"
+                        data-health-schedule-status
+                    >
+                        —
+                    </em>
+
+                </div>
+
+
+                <div class="health-row">
+
+                    <div class="health-icon green">
+                        <i data-lucide="file-check-2"></i>
+                    </div>
+
+                    <div>
+                        <strong>Receivables</strong>
+                        <span>
+                            Project financial data
+                        </span>
+                    </div>
+
+                    <em class="green">
+                        —
+                    </em>
+
+                </div>
+
+
+                <div class="health-row">
+
+                    <div class="health-icon green">
+                        <i data-lucide="shield-check"></i>
+                    </div>
+
+                    <div>
+                        <strong>Safety</strong>
+                        <span>
+                            No safety data available
+                        </span>
+                    </div>
+
+                    <em class="green">
+                        —
+                    </em>
+
+                </div>
+
+            </article>
+
+        </section>
+
+
+        <!-- =====================================================
+             Recent Activity + Team
+             ===================================================== -->
+
+        <section class="project-overview-grid">
+
+
+            <!-- Recent activity -->
+
+            <article class="panel">
+
+                <div class="panel-head">
+
+                    <div>
+                        <h2>Recent activity</h2>
+                        <p>Latest project records</p>
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="activity-list"
+                    data-project-activity
+                >
+                    <div class="overview-empty">
+                        No recent activity available.
+                    </div>
+                </div>
+
+            </article>
+
+
+            <!-- Project team -->
+
+            <article class="panel">
+
+                <div class="panel-head">
+
+                    <div>
+                        <h2>Project team</h2>
+                        <p>Key responsibility</p>
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="team-list"
+                    data-project-team
+                >
+                    <div class="overview-empty">
+                        No team members available.
+                    </div>
+                </div>
+
+            </article>
+
+        </section>
+
     </section>
-  </section>
 
-  <section class="panel table-panel tab-panel" data-project-panel="phases" hidden>
-    <div class="panel-head"><div><h2>Project phases</h2><p>Schedule, ownership, and completion tracking</p></div><button class="primary-button" data-action="add-phase"><i data-lucide="plus"></i>Add phase</button></div>
-    <div class="responsive-table" data-project-phases></div>
-  </section>
 
-  <section data-project-panel="budget" hidden>
-    <div class="budget-hero"><div><strong data-budget-hero-total>—</strong><span>Approved budget</span></div><div><strong data-budget-hero-actual>—</strong><span>Actual cost</span></div><div><strong data-budget-hero-remaining>—</strong><span>Remaining</span></div><div><strong data-budget-hero-variance>—</strong><span>Against plan</span></div></div>
+    <!-- =========================================================
+         PHASES
+         ========================================================= -->
 
-    <div class="panel-head budget-panel-head">
-      <div><h2>Project budgets</h2><p>Every budget version for this project, with its own allocated items</p></div>
-      <button class="primary-button" data-action="new-budget"><i data-lucide="plus"></i>New budget</button>
-    </div>
+    <section
+        class="panel table-panel tab-panel"
+        data-project-panel="phases"
+        hidden
+    >
 
-    <div class="budget-list" data-project-budgets></div>
-  </section>
+        <div class="panel-head">
 
-  <section class="panel table-panel tab-panel" data-project-panel="procurement" hidden><div class="panel-head"><div><h2>Project procurement</h2><p>Purchase orders and delivery status</p></div><button class="primary-button" data-action="add-record"><i data-lucide="plus"></i>New change order</button></div>
-    <div class="responsive-table" data-project-change-orders></div>
-  </section>
+            <div>
+                <h2>Project phases</h2>
+                <p>
+                    Schedule, ownership, and completion tracking
+                </p>
+            </div>
 
-  <section class="panel tab-panel" data-project-panel="documents" hidden><div class="panel-head"><div><h2>Project documents</h2><p>Contracts, drawings, invoices, and site records</p></div><button class="primary-button"><i data-lucide="plus"></i>Upload document</button></div>
-    <div class="document-grid" data-project-documents>
-      <article class="doc-card"><div class="doc-icon"><i data-lucide="file-text"></i></div><div><strong>Signed construction contract</strong><span>PDF · 4.8 MB · 18 Mar 2026</span><em>Contract</em></div><i data-lucide="ellipsis"></i></article>
-      <article class="doc-card"><div class="doc-icon"><i data-lucide="file-text"></i></div><div><strong>Architectural drawings — Rev 04</strong><span>ZIP · 18.2 MB · 21 Aug 2026</span><em>Drawing</em></div><i data-lucide="ellipsis"></i></article>
-      <article class="doc-card"><div class="doc-icon"><i data-lucide="file-text"></i></div><div><strong>Structural inspection report</strong><span>PDF · 2.1 MB · 25 Aug 2026</span><em>Report</em></div><i data-lucide="ellipsis"></i></article>
-      <article class="doc-card"><div class="doc-icon"><i data-lucide="file-text"></i></div><div><strong>Change order CO-003</strong><span>PDF · 890 KB · 14 Aug 2026</span><em>Change order</em></div><i data-lucide="ellipsis"></i></article>
-    </div>
-  </section>
-  <p data-project-detail-error role="alert" hidden></p>
+            <button
+                type="button"
+                class="primary-button"
+                data-action="add-phase"
+            >
+                <i data-lucide="plus"></i>
+                Add phase
+            </button>
+
+        </div>
+
+
+        <div
+            class="responsive-table"
+            data-project-phases
+        ></div>
+
+    </section>
+
+
+    <!-- =========================================================
+         BUDGET
+         ========================================================= -->
+
+    <section
+        data-project-panel="budget"
+        hidden
+    >
+
+        <div class="budget-hero">
+
+            <div>
+                <strong data-budget-hero-total>—</strong>
+                <span>Approved budget</span>
+            </div>
+
+            <div>
+                <strong data-budget-hero-actual>—</strong>
+                <span>Actual cost</span>
+            </div>
+
+            <div>
+                <strong data-budget-hero-remaining>—</strong>
+                <span>Remaining</span>
+            </div>
+
+            <div>
+                <strong data-budget-hero-variance>—</strong>
+                <span>Against plan</span>
+            </div>
+
+        </div>
+
+
+        <div class="panel-head budget-panel-head">
+
+            <div>
+                <h2>Project budgets</h2>
+                <p>
+                    Every budget version for this project,
+                    with its own allocated items
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="primary-button"
+                data-action="new-budget"
+            >
+                <i data-lucide="plus"></i>
+                New budget
+            </button>
+
+        </div>
+
+
+        <div
+            class="budget-list"
+            data-project-budgets
+        ></div>
+
+    </section>
+
+
+    <!-- =========================================================
+         Change Orders
+         ========================================================= -->
+
+    <section
+        class="panel table-panel tab-panel"
+        data-project-panel="change-orders"
+        hidden
+    >
+
+        <div class="panel-head">
+
+            <div>
+                <h2>Change orders</h2>
+                <p>
+                    Project change orders, with their own budget and approval status
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="primary-button"
+                data-action="add-record"
+            >
+                <i data-lucide="plus"></i>
+                New change order
+            </button>
+
+        </div>
+
+
+        <div
+            class="responsive-table"
+            data-project-change-orders
+        ></div>
+
+    </section>
+
+
+    <!-- =========================================================
+         DOCUMENTS
+         ========================================================= -->
+
+    <section
+        class="panel tab-panel"
+        data-project-panel="documents"
+        hidden
+    >
+
+        <div class="panel-head">
+
+            <div>
+                <h2>Project documents</h2>
+                <p>
+                    Contracts, drawings, invoices, and site records
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="primary-button"
+                data-action="upload-document"
+            >
+                <i data-lucide="plus"></i>
+                Upload document
+            </button>
+
+        </div>
+
+
+        <div
+            class="document-grid"
+            data-project-documents
+        >
+            <div class="overview-empty">
+                No documents available.
+            </div>
+        </div>
+
+    </section>
+
+
+    <!-- =========================================================
+         Error
+         ========================================================= -->
+
+    <p
+        data-project-detail-error
+        role="alert"
+        hidden
+    ></p>
+
 </div>
 
-<dialog data-detail-dialog><form data-detail-form><h2 data-dialog-title></h2><p data-dialog-error role="alert"></p><div data-dialog-fields></div><p><button type="button" class="quiet-button" data-dialog-close>Cancel</button><button type="submit" class="primary-button" data-dialog-submit>Save</button></p></form></dialog>
+
+<!-- =============================================================
+     Detail Dialog
+     ============================================================= -->
+
+<dialog data-detail-dialog>
+
+    <form data-detail-form>
+
+        <h2 data-dialog-title></h2>
+
+        <p
+            data-dialog-error
+            role="alert"
+        ></p>
+
+        <div data-dialog-fields></div>
+
+        <p>
+
+            <button
+                type="button"
+                class="quiet-button"
+                data-dialog-close
+            >
+                Cancel
+            </button>
+
+            <button
+                type="submit"
+                class="primary-button"
+                data-dialog-submit
+            >
+                Save
+            </button>
+
+        </p>
+
+    </form>
+
+</dialog>
+
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/project_detail.js' %}"></script>{% endblock %}
+
+
+{% block page_js %}
+
+<script src="{% static 'js/project_detail.js' %}"></script>
+
+{% endblock %}

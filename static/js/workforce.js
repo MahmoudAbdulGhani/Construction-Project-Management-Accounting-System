@@ -1,168 +1,2539 @@
-/* Workforce: employee profiles and project assignments from the existing APIs. */
+/* =========================================================
+   Workforce / Employee Management
+   ========================================================= */
+
 (() => {
-  "use strict";
-  const EMPLOYEES_API = "/api/employees/";
-  const PROJECTS_API = "/api/projects/projects/";
-  const $ = (s, r = document) => r.querySelector(s);
-  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  const state = { employees: [], assignments: {}, assignmentErrors: new Set(), projects: null, selected: null, editAssignment: null, statusFilter: "all", search: "" };
-  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const money = v => Number(v || 0).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+    "use strict";
 
-  class ApiError extends Error { constructor(message, status, body) { super(message); this.status = status; this.body = body; } }
-  function cookie(name) { const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)")); return m ? decodeURIComponent(m[2]) : ""; }
-  function errorText(body, fallback) {
-    if (!body) return fallback;
-    if (typeof body === "string") return body;
-    if (body.detail) return typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    return Object.entries(body).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(" ") : value}`).join(" ") || fallback;
-  }
-  async function api(url, options = {}) {
-    const headers = { Accept: "application/json", ...(options.headers || {}) };
-    if (options.body) headers["Content-Type"] = "application/json";
-    if (options.method && !["GET", "HEAD"].includes(options.method)) headers["X-CSRFToken"] = cookie("csrftoken");
-    const response = await fetch(url, { credentials: "same-origin", ...options, headers });
-    let body = null;
-    if (response.status !== 204) { try { body = await response.json(); } catch (_) { /* non-JSON */ } }
-    if (!response.ok) throw new ApiError(errorText(body, response.statusText || `Request failed (${response.status})`), response.status, body);
-    return body;
-  }
-  async function all(url) { const rows = []; while (url) { const data = await api(url); if (Array.isArray(data)) return data; rows.push(...(data.results || [])); url = data.next; } return rows; }
-  function setText(sel, value) { const el = $(sel); if (el) el.textContent = value; }
-  function status(value) { const s = value || "ACTIVE"; return `<span class="status${s === "ACTIVE" ? " active" : s === "TERMINATED" ? " warning" : ""}"><i></i>${esc(s.replace("_", " "))}</span>`; }
-  function setMetricsLoading() { ["active", "onleave", "assignments", "projects"].forEach(key => setText(`[data-metric=${key}]`, "—")); }
-  function renderMetrics() {
-    setText("[data-metric=active]", state.employees.filter(x => x.employment_status === "ACTIVE").length);
-    setText("[data-metric=onleave]", state.employees.filter(x => x.employment_status === "ON_LEAVE").length);
-    if (state.assignmentErrors.size) { setText("[data-metric=assignments]", "—"); setText("[data-metric=projects]", "—"); return; }
-    const assignments = Object.values(state.assignments).flat().filter(a => !a.released_at);
-    setText("[data-metric=assignments]", assignments.length);
-    setText("[data-metric=projects]", new Set(assignments.map(a => a.project.id)).size);
-  }
-  function projectCell(id) {
-    if (state.assignmentErrors.has(id)) return '<span class="workforce-unavailable">Unavailable</span>';
-    const list = state.assignments[id] || [], active = list.find(a => !a.released_at);
-    return active ? `${esc(active.project.name)}<span>${esc(active.project.code)}</span>` : "—";
-  }
-  function render() {
-    let list = state.employees;
-    if (state.statusFilter !== "all") list = list.filter(x => x.employment_status === state.statusFilter);
-    const q = state.search.toLowerCase().trim();
-    if (q) list = list.filter(x => [x.name, x.employee_number, x.position, x.department, x.email].some(v => (v || "").toLowerCase().includes(q)));
-    const body = $("[data-workforce-rows]");
-    if (!list.length) {
-      const filtered = state.employees.length > 0;
-      body.innerHTML = `<tr><td colspan="6"><strong>${filtered ? "No matching employees" : "No employees yet"}</strong><span>${filtered ? "Adjust the search or status filter." : "Create an employee to start building the workforce."}</span></td></tr>`;
-    } else {
-      body.innerHTML = list.map(x => `<tr><td><button class="workforce-name" type="button" data-workforce-detail="${x.id}"><strong>${esc(x.name)}</strong><span>${esc(x.employee_number)}</span></button></td><td>${esc(x.position || "—")}</td><td>${esc(x.department || "—")}</td><td>${projectCell(x.id)}</td><td>${x.labor_rate != null ? money(x.labor_rate) : "—"}</td><td>${status(x.employment_status)} <button class="quiet-button" type="button" data-workforce-edit="${x.id}">Edit</button></td></tr>`).join("");
+    /*
+     * Prevent accidental double initialization if the script
+     * gets included more than once.
+     */
+    if (window.__cedarWorkforceInitialized) {
+        return;
     }
-    renderMetrics();
-  }
-  function showPageError(message) { const el = $("[data-workforce-page-error]"); el.hidden = false; el.innerHTML = `${esc(message)} <button type="button" data-workforce-retry>Retry</button>`; $("[data-workforce-retry]", el).onclick = reload; }
-  function hidePageError() { $("[data-workforce-page-error]").hidden = true; }
-  async function loadAssignmentsFor(employee) {
-    try { state.assignments[employee.id] = await api(`${EMPLOYEES_API}${employee.id}/projects/`); state.assignmentErrors.delete(employee.id); }
-    catch (_) { delete state.assignments[employee.id]; state.assignmentErrors.add(employee.id); }
-  }
-  async function reload() {
-    hidePageError(); setMetricsLoading();
-    $("[data-workforce-rows]").innerHTML = '<tr><td colspan="6"><strong>Loading workforce…</strong><span>Fetching live employees and assignments</span></td></tr>';
-    try {
-      state.employees = await all(EMPLOYEES_API); state.assignments = {}; state.assignmentErrors.clear();
-      await Promise.all(state.employees.map(loadAssignmentsFor)); render();
-      if (state.assignmentErrors.size) showPageError(`Assignments could not be loaded for ${state.assignmentErrors.size} employee(s). Assignment metrics are unavailable.`);
-    } catch (error) {
-      state.employees = []; setMetricsLoading();
-      $("[data-workforce-rows]").innerHTML = '<tr><td colspan="6"><strong>Could not load workforce</strong><span>Use Retry to request the employee list again.</span></td></tr>';
-      showPageError(error.message);
+
+    window.__cedarWorkforceInitialized = true;
+
+
+    /* =========================================================
+       API
+       ========================================================= */
+
+    const API = "/api/employees/";
+    const PROJECTS_API = "/api/projects/projects/";
+    const CURRENCY = "USD";
+
+
+    /* =========================================================
+       DOM helpers
+       ========================================================= */
+
+    const $ = (sel, root = document) =>
+        root.querySelector(sel);
+
+    const $$ = (sel, root = document) =>
+        [...root.querySelectorAll(sel)];
+
+
+    /* =========================================================
+       State
+       ========================================================= */
+
+    const state = {
+        employees: [],
+        assignments: [],
+        phases: [],
+        projects: [],
+        statusFilter: "all",
+        search: ""
+    };
+
+    let detailEmployeeId = null;
+    let detailEmployee = null;
+    let activeTab = "assignments";
+
+
+    /* =========================================================
+       Escape HTML
+       ========================================================= */
+
+    const esc = value =>
+        String(value ?? "").replace(
+            /[&<>"']/g,
+            c => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            }[c])
+        );
+
+
+    /* =========================================================
+       CSRF
+       ========================================================= */
+
+    function getCookie(name) {
+        const m = document.cookie.match(
+            new RegExp("(^|;\\s*)" + name + "=([^;]*)")
+        );
+
+        return m ? decodeURIComponent(m[2]) : "";
     }
-  }
 
-  const employeeDialog = $("[data-employee-form-dialog]"), employeeForm = $("[data-employee-form]");
-  function clearErrors(form, general) { general.hidden = true; general.textContent = ""; $$('[data-field-error]', form).forEach(x => x.textContent = ""); }
-  function showFormErrors(form, general, error) {
-    clearErrors(form, general); let fieldShown = false;
-    if (error.body && typeof error.body === "object") Object.entries(error.body).forEach(([key, value]) => { const el = $(`[data-field-error="${key}"]`, form); if (el) { el.textContent = Array.isArray(value) ? value.join(" ") : String(value); fieldShown = true; } });
-    if (!fieldShown || error.body?.detail || error.body?.non_field_errors) { general.textContent = error.message; general.hidden = false; }
-  }
-  function employeePayload(form) { const data = Object.fromEntries(new FormData(form).entries()); ["phone", "email", "position", "department", "labor_rate"].forEach(key => { if (data[key] === "") data[key] = null; }); return data; }
-  function openEmployeeForm(employee = null) {
-    employeeForm.reset(); clearErrors(employeeForm, $("[data-employee-form-error]")); employeeForm.dataset.employeeId = employee?.id || "";
-    setText("[data-employee-form-title]", employee ? "Edit employee" : "New employee");
-    if (employee) Object.entries(employee).forEach(([key, value]) => { const control = employeeForm.elements.namedItem(key); if (control) control.value = value ?? ""; });
-    employeeDialog.showModal();
-  }
-  async function saveEmployee(event) {
-    event.preventDefault(); clearErrors(employeeForm, $("[data-employee-form-error]"));
-    if (!employeeForm.reportValidity()) return;
-    const button = $("[data-employee-save]"), id = employeeForm.dataset.employeeId; button.disabled = true; button.textContent = "Saving…";
-    try { await api(id ? `${EMPLOYEES_API}${id}/` : EMPLOYEES_API, { method: id ? "PATCH" : "POST", body: JSON.stringify(employeePayload(employeeForm)) }); employeeDialog.close(); employeeForm.reset(); await reload(); if (id && state.selected?.id === id) await openDetail(id); }
-    catch (error) { showFormErrors(employeeForm, $("[data-employee-form-error]"), error); }
-    finally { button.disabled = false; button.textContent = "Save employee"; }
-  }
 
-  const detailDialog = $("[data-employee-detail-dialog]");
-  async function openDetail(id) {
-    if (!detailDialog.open) detailDialog.showModal(); $("[data-assignment-state]").innerHTML = '<p class="workforce-state">Loading assignments…</p>';
-    try {
-      state.selected = await api(`${EMPLOYEES_API}${id}/`);
-      setText("[data-detail-name]", state.selected.name); setText("[data-detail-number]", state.selected.employee_number); setText("[data-detail-phone]", state.selected.phone || "—"); setText("[data-detail-email]", state.selected.email || "—"); setText("[data-detail-position]", state.selected.position || "—"); setText("[data-detail-department]", state.selected.department || "—"); setText("[data-detail-rate]", state.selected.labor_rate != null ? money(state.selected.labor_rate) : "—"); setText("[data-detail-status]", state.selected.employment_status.replace("_", " "));
-      await loadSelectedAssignments();
-    } catch (error) { showDetailMessage(error.message); $("[data-assignment-state]").innerHTML = '<p class="workforce-state error">Employee details could not be loaded.</p>'; }
-  }
-  function showDetailMessage(message) { const el = $("[data-detail-message]"); el.textContent = message; el.hidden = false; }
-  function clearDetailMessage() { const el = $("[data-detail-message]"); el.hidden = true; el.textContent = ""; }
-  async function loadSelectedAssignments() {
-    const area = $("[data-assignment-state]"); area.innerHTML = '<p class="workforce-state">Loading assignments…</p>'; clearDetailMessage();
-    try { const rows = await api(`${EMPLOYEES_API}${state.selected.id}/projects/`); state.assignments[state.selected.id] = rows; state.assignmentErrors.delete(state.selected.id); renderAssignments(rows); renderMetrics(); }
-    catch (error) { state.assignmentErrors.add(state.selected.id); renderMetrics(); area.innerHTML = `<div class="workforce-state error">${esc(error.message)} <button class="quiet-button" type="button" data-assignment-retry>Retry</button></div>`; $("[data-assignment-retry]").onclick = loadSelectedAssignments; }
-  }
-  function renderAssignments(rows) {
-    const area = $("[data-assignment-state]");
-    if (!rows.length) { area.innerHTML = '<p class="workforce-state">No project assignments for this employee.</p>'; return; }
-    area.innerHTML = `<div class="responsive-table"><table><thead><tr><th>Project</th><th>Role</th><th>Assigned</th><th>Released</th><th>Actions</th></tr></thead><tbody>${rows.map(a => `<tr><td><strong>${esc(a.project.name)}</strong><span>${esc(a.project.code)}</span></td><td>${esc(a.role_on_project || "—")}</td><td>${esc(a.assigned_at)}</td><td>${esc(a.released_at || "—")}</td><td><button class="quiet-button" type="button" data-assignment-edit="${a.id}">Edit</button> ${a.released_at ? "" : `<button class="quiet-button" type="button" data-assignment-release="${a.id}">Release</button>`} <button class="quiet-button danger" type="button" data-assignment-remove="${a.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`;
-  }
+    /* =========================================================
+       API helpers
+       ========================================================= */
 
-  const assignmentDialog = $("[data-assignment-dialog]"), assignmentForm = $("[data-assignment-form]");
-  async function loadProjects() { if (state.projects === null) state.projects = await all(PROJECTS_API); return state.projects; }
-  async function openAssignmentForm(assignment = null) {
-    state.editAssignment = assignment; assignmentForm.reset(); clearErrors(assignmentForm, $("[data-assignment-error]"));
-    setText("[data-assignment-title]", assignment ? "Edit assignment" : "Assign project"); $("[data-project-field]").hidden = !!assignment; $("[data-assigned-field]").hidden = !!assignment; $("[data-release-field]").hidden = !assignment;
-    assignmentForm.elements.project_id.disabled = !!assignment; assignmentForm.elements.assigned_at.disabled = !!assignment; assignmentForm.elements.released_at.disabled = !assignment;
-    if (assignment) { assignmentForm.elements.role_on_project.value = assignment.role_on_project || ""; assignmentForm.elements.released_at.value = assignment.released_at || ""; assignmentDialog.showModal(); return; }
-    assignmentDialog.showModal();
-    try { const projects = await loadProjects(); const used = new Set((state.assignments[state.selected.id] || []).map(a => a.project.id)); $("[data-assignment-project]").innerHTML = '<option value="">Select project…</option>' + projects.map(p => `<option value="${p.id}" ${used.has(p.id) ? "disabled" : ""}>${esc(p.code)} — ${esc(p.name)}</option>`).join(""); }
-    catch (error) { const el = $("[data-assignment-error]"); el.textContent = `Could not load projects: ${error.message}`; el.hidden = false; }
-  }
-  async function saveAssignment(event) {
-    event.preventDefault(); clearErrors(assignmentForm, $("[data-assignment-error]")); if (!assignmentForm.reportValidity()) return;
-    const button = $("[data-assignment-save]"), editing = state.editAssignment; button.disabled = true; button.textContent = "Saving…";
-    const raw = Object.fromEntries(new FormData(assignmentForm).entries()); const payload = editing ? { role_on_project: raw.role_on_project || null, released_at: raw.released_at || null } : { project_id: raw.project_id, assigned_at: raw.assigned_at, role_on_project: raw.role_on_project || null };
-    try { await api(editing ? `${EMPLOYEES_API}${state.selected.id}/projects/${editing.id}/` : `${EMPLOYEES_API}${state.selected.id}/projects/`, { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) }); assignmentDialog.close(); await loadSelectedAssignments(); render(); }
-    catch (error) { showFormErrors(assignmentForm, $("[data-assignment-error]"), error); }
-    finally { button.disabled = false; button.textContent = "Save assignment"; }
-  }
-  async function mutateAssignment(id, method, payload, progress) {
-    const area = $("[data-assignment-state]"); area.classList.add("loading"); clearDetailMessage();
-    try { await api(`${EMPLOYEES_API}${state.selected.id}/projects/${id}/`, { method, ...(payload ? { body: JSON.stringify(payload) } : {}) }); await loadSelectedAssignments(); render(); }
-    catch (error) { showDetailMessage(`${progress} failed: ${error.message}`); }
-    finally { area.classList.remove("loading"); }
-  }
+    async function api(url, options = {}) {
+        const opts = {
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                ...(options.headers || {})
+            },
+            ...options
+        };
 
-  const deleteDialog = $("[data-delete-dialog]");
-  async function deleteEmployee() { const button = $("[data-delete-confirm]"), errorEl = $("[data-delete-error]"); button.disabled = true; button.textContent = "Deleting…"; errorEl.hidden = true; try { await api(`${EMPLOYEES_API}${state.selected.id}/`, { method: "DELETE" }); deleteDialog.close(); detailDialog.close(); state.selected = null; await reload(); } catch (error) { errorEl.textContent = error.status === 409 || error.status >= 500 ? "This employee cannot be deleted because another record still references them." : error.message; errorEl.hidden = false; } finally { button.disabled = false; button.textContent = "Delete employee"; } }
-  function close(dialog) { if (dialog.open) dialog.close(); }
-  function bind() {
-    $("[data-workforce-add]").onclick = () => openEmployeeForm(); employeeForm.onsubmit = saveEmployee;
-    $$('[data-employee-form-close],[data-employee-form-cancel]').forEach(b => b.onclick = () => close(employeeDialog));
-    $$('[data-detail-close]').forEach(b => b.onclick = () => close(detailDialog));
-    $("[data-employee-edit]").onclick = () => openEmployeeForm(state.selected); $("[data-employee-delete]").onclick = () => { $("[data-delete-error]").hidden = true; deleteDialog.showModal(); };
-    $$('[data-delete-cancel]').forEach(b => b.onclick = () => close(deleteDialog)); $("[data-delete-confirm]").onclick = deleteEmployee;
-    $("[data-assignment-new]").onclick = () => openAssignmentForm(); assignmentForm.onsubmit = saveAssignment; $$('[data-assignment-close],[data-assignment-cancel]').forEach(b => b.onclick = () => close(assignmentDialog));
-    $("[data-workforce-rows]").onclick = e => { const detail = e.target.closest("[data-workforce-detail]"), edit = e.target.closest("[data-workforce-edit]"); if (detail) openDetail(detail.dataset.workforceDetail); if (edit) { const employee = state.employees.find(x => x.id === edit.dataset.workforceEdit); openEmployeeForm(employee); } };
-    $("[data-assignment-state]").onclick = e => { const edit = e.target.closest("[data-assignment-edit]"), release = e.target.closest("[data-assignment-release]"), remove = e.target.closest("[data-assignment-remove]"); const rows = state.assignments[state.selected?.id] || []; if (edit) openAssignmentForm(rows.find(a => a.id === edit.dataset.assignmentEdit)); if (release) mutateAssignment(release.dataset.assignmentRelease, "PATCH", { released_at: new Date().toISOString().slice(0, 10) }, "Release"); if (remove && window.confirm("Remove this project assignment?")) mutateAssignment(remove.dataset.assignmentRemove, "DELETE", null, "Removal"); };
-    $$('[data-status-filter]').forEach(b => b.onclick = () => { state.statusFilter = b.dataset.statusFilter; $$('[data-status-filter]').forEach(x => x.classList.remove("active")); b.classList.add("active"); render(); });
-    $("#workforce-search-input").oninput = e => { state.search = e.target.value; render(); };
-  }
-  document.addEventListener("DOMContentLoaded", () => { bind(); reload(); });
+        if (
+            options.method &&
+            !["GET", "HEAD"].includes(options.method)
+        ) {
+            opts.headers["X-CSRFToken"] =
+                getCookie("csrftoken");
+        }
+
+        const res = await fetch(url, opts);
+
+        if (!res.ok) {
+            let detail = res.statusText;
+
+            try {
+                const data = await res.json();
+                detail =
+                    data.detail ||
+                    data.message ||
+                    JSON.stringify(data);
+            } catch (e) {
+                /* Ignore JSON parsing errors. */
+            }
+
+            throw new Error(
+                `${res.status}: ${detail}`
+            );
+        }
+
+        if (res.status === 204) {
+            return null;
+        }
+
+        return res.json();
+    }
+
+
+    async function fetchAll(url) {
+        const rows = [];
+        let next = url;
+
+        while (next) {
+            const data = await api(next);
+
+            if (Array.isArray(data)) {
+                rows.push(...data);
+                break;
+            }
+
+            rows.push(...(data.results || []));
+            next = data.next;
+        }
+
+        return rows;
+    }
+
+
+    /* =========================================================
+       Formatting helpers
+       ========================================================= */
+
+    /* =========================================================
+      Employee data helpers
+      ========================================================= */
+
+    function getLaborRate(employee) {
+        if (!employee) {
+            return null;
+        }
+
+        /*
+        * labor_rate is the canonical API field.
+        *
+        * The additional names make the frontend tolerant of
+        * older serializer responses while the API is being
+        * standardized.
+        */
+        const value =
+            employee.labor_rate ??
+            employee.laborRate ??
+            employee.rate ??
+            employee.labor_rate_per_hour ??
+            null;
+
+        if (
+            value === null ||
+            value === undefined ||
+            value === ""
+        ) {
+            return null;
+        }
+
+        const number = Number(value);
+
+        return Number.isFinite(number)
+            ? number
+            : null;
+    }
+
+
+    function statusLabel(status) {
+        switch (status) {
+            case "ACTIVE":
+                return "Active";
+
+            case "ON_LEAVE":
+                return "On leave";
+
+            case "TERMINATED":
+                return "Terminated";
+
+            default:
+                return status || "Unknown";
+        }
+    }
+
+
+    function fmtMoney(value) {
+        if (
+            value === undefined ||
+            value === null ||
+            value === ""
+        ) {
+            return "—";
+        }
+
+        const normalized =
+            typeof value === "string"
+                ? value.replace(/[$,\s]/g, "")
+                : value;
+
+        const n = Number(normalized);
+
+        if (!Number.isFinite(n)) {
+            return esc(value);
+        }
+
+        return n.toLocaleString("en-US", {
+            style: "currency",
+            currency: CURRENCY,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+
+    function statusLabel(status) {
+        const labels = {
+            ACTIVE: "Active",
+            ON_LEAVE: "On leave",
+            TERMINATED: "Terminated"
+        };
+
+        return labels[status] || status || "Active";
+    }
+
+
+    function statusPill(status) {
+        const safe = status || "ACTIVE";
+
+        const cls =
+            safe === "ACTIVE"
+                ? " active"
+                : safe === "TERMINATED"
+                    ? " warning"
+                    : "";
+
+        return `
+            <span class="status${cls}">
+                <i></i>${esc(statusLabel(safe))}
+            </span>
+        `;
+    }
+
+
+    /* =========================================================
+       Employee status select
+       ========================================================= */
+
+    function statusSelect(employee) {
+        const current =
+            employee.employment_status || "ACTIVE";
+
+        return `
+            <select
+                class="employee-status-select"
+                data-employee-status="${esc(employee.id)}"
+                aria-label="Change employment status for ${esc(employee.name)}"
+            >
+                <option
+                    value="ACTIVE"
+                    ${current === "ACTIVE" ? "selected" : ""}
+                >
+                    Active
+                </option>
+
+                <option
+                    value="ON_LEAVE"
+                    ${current === "ON_LEAVE" ? "selected" : ""}
+                >
+                    On leave
+                </option>
+
+                <option
+                    value="TERMINATED"
+                    ${current === "TERMINATED" ? "selected" : ""}
+                >
+                    Terminated
+                </option>
+            </select>
+        `;
+    }
+
+
+    /* =========================================================
+       Employee table
+       ========================================================= */
+
+    function renderRows() {
+        const tbody = $("[data-employee-rows]");
+
+        if (!tbody) {
+            return;
+        }
+
+        let list = state.employees;
+
+        if (state.statusFilter !== "all") {
+            list = list.filter(
+                e => e.employment_status === state.statusFilter
+            );
+        }
+
+        const q = state.search.trim().toLowerCase();
+
+        if (q) {
+            list = list.filter(e =>
+                [
+                    e.name,
+                    e.employee_number,
+                    e.position,
+                    e.department,
+                    e.email
+                ].some(v =>
+                    String(v || "")
+                        .toLowerCase()
+                        .includes(q)
+                )
+            );
+        }
+
+        if (!list.length) {
+            tbody.innerHTML = `
+                <tr>
+                    <td>
+                        <strong>No employees found</strong>
+                        <span>
+                            Try adjusting the search or status filter.
+                        </span>
+                    </td>
+
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+
+                    <td>
+                        <span class="status">
+                            <i></i>—
+                        </span>
+                    </td>
+
+                    <td>—</td>
+                </tr>
+            `;
+
+            return;
+        }
+
+        tbody.innerHTML = list.map(employee => {
+
+            const laborRate = getLaborRate(employee);
+
+            return `
+                <tr
+                    class="row-click"
+                    data-employee-id="${esc(employee.id)}"
+                >
+
+                    <td>
+                        <strong>
+                            ${esc(employee.name)}
+                        </strong>
+
+                        <span>
+                            ${esc(employee.employee_number)}
+                        </span>
+                    </td>
+
+                    <td>
+                        ${esc(employee.position || "—")}
+                    </td>
+
+                    <td>
+                        ${esc(employee.department || "—")}
+                    </td>
+
+                    <td>
+                        ${
+                            laborRate !== null
+                                ? fmtMoney(laborRate)
+                                : "—"
+                        }
+                    </td>
+
+                    <td>
+                        ${statusPill(employee.employment_status)}
+                    </td>
+
+                    <td>
+                        <div class="employee-table-actions">
+
+                            <select
+                                class="employee-status-select"
+                                data-status-employee="${esc(employee.id)}"
+                                aria-label="Change employee status"
+                            >
+                                <option
+                                    value="ACTIVE"
+                                    ${
+                                        employee.employment_status === "ACTIVE"
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    Active
+                                </option>
+
+                                <option
+                                    value="ON_LEAVE"
+                                    ${
+                                        employee.employment_status === "ON_LEAVE"
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    On leave
+                                </option>
+
+                                <option
+                                    value="TERMINATED"
+                                    ${
+                                        employee.employment_status === "TERMINATED"
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    Terminated
+                                </option>
+                            </select>
+
+                            <button
+                                type="button"
+                                class="employee-edit-icon"
+                                data-employee-edit-table="${esc(employee.id)}"
+                                aria-label="Edit ${esc(employee.name)}"
+                                title="Edit employee"
+                            >
+                                <i data-lucide="pencil"></i>
+                            </button>
+
+                        </div>
+                    </td>
+
+                </tr>
+            `;
+        }).join("");
+
+        /*
+        * Prevent clicking the status selector or edit button
+        * from opening the employee profile.
+        */
+        $$("[data-status-employee]", tbody).forEach(select => {
+
+            select.addEventListener("click", event => {
+                event.stopPropagation();
+            });
+
+            select.addEventListener("change", async event => {
+                event.stopPropagation();
+
+                await updateEmployeeStatus(
+                    select.dataset.statusEmployee,
+                    select
+                );
+            });
+        });
+
+
+        $$("[data-employee-edit-table]", tbody).forEach(button => {
+
+            button.addEventListener("click", event => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const employee = state.employees.find(
+                    e =>
+                        String(e.id) ===
+                        String(button.dataset.employeeEditTable)
+                );
+
+                if (employee) {
+                    openEmployeeForm(employee);
+                }
+            });
+        });
+
+
+        /*
+        * Re-render Lucide icons after injecting the rows.
+        */
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
+
+
+        /*
+        * Clicking elsewhere on the row still opens the
+        * read-only employee profile.
+        */
+        $$("[data-employee-id]", tbody).forEach(row => {
+
+            row.addEventListener("click", event => {
+
+                if (
+                    event.target.closest(
+                        "[data-status-employee], [data-employee-edit-table]"
+                    )
+                ) {
+                    return;
+                }
+
+                openDetail(row.dataset.employeeId);
+            });
+
+        });
+    }
+    async function updateEmployeeStatus(employeeId, select) {
+        const employee = state.employees.find(
+            e => String(e.id) === String(employeeId)
+        );
+
+        if (!employee) {
+            return;
+        }
+
+        const previousStatus =
+            employee.employment_status;
+
+        const newStatus = select.value;
+
+        if (previousStatus === newStatus) {
+            return;
+        }
+
+        select.disabled = true;
+
+        try {
+            const updated = await api(
+                `${API}${employeeId}/`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        employment_status: newStatus
+                    })
+                }
+            );
+
+            /*
+            * IMPORTANT:
+            * Keep every field returned by the API, including
+            * labor_rate. This is why the labor rate was appearing
+            * after changing status before.
+            */
+            Object.assign(employee, updated);
+
+            employee.employment_status =
+                updated.employment_status || newStatus;
+
+            /*
+            * If the PATCH response contains labor_rate,
+            * preserve it explicitly.
+            */
+            const updatedRate = getLaborRate(updated);
+
+            if (updatedRate !== null) {
+                employee.labor_rate = updatedRate;
+            }
+
+            renderRows();
+            renderMetrics();
+
+        } catch (error) {
+
+            select.value = previousStatus;
+
+            alert(
+                "Could not update employee status: " +
+                error.message
+            );
+
+        } finally {
+            select.disabled = false;
+        }
+    }
+
+
+    /* =========================================================
+       Change employee status
+       ========================================================= */
+
+    function bindStatusActions(root = document) {
+        $$(
+            "[data-employee-status]",
+            root
+        ).forEach(select => {
+            select.addEventListener(
+                "click",
+                e => {
+                    e.stopPropagation();
+                }
+            );
+
+            select.addEventListener(
+                "change",
+                async e => {
+                    e.stopPropagation();
+
+                    const employeeId =
+                        select.dataset.employeeStatus;
+
+                    const newStatus =
+                        select.value;
+
+                    const employee =
+                        state.employees.find(
+                            item =>
+                                String(item.id) ===
+                                String(employeeId)
+                        );
+
+                    if (!employee) {
+                        return;
+                    }
+
+                    const oldStatus =
+                        employee.employment_status ||
+                        "ACTIVE";
+
+                    if (newStatus === oldStatus) {
+                        return;
+                    }
+
+                    select.disabled = true;
+
+                    try {
+                        const updated =
+                            await api(
+                                `${API}${employeeId}/`,
+                                {
+                                    method: "PATCH",
+                                    body: JSON.stringify({
+                                        employment_status:
+                                            newStatus
+                                    })
+                                }
+                            );
+
+                        /*
+                         * Update local employee data from the
+                         * API response when available.
+                         */
+                        Object.assign(
+                            employee,
+                            updated || {},
+                            {
+                                employment_status:
+                                    updated?.employment_status ||
+                                    newStatus
+                            }
+                        );
+
+                        renderRows();
+                        renderMetrics();
+
+                        /*
+                         * If the employee being viewed is the
+                         * same employee, update the profile
+                         * status immediately.
+                         */
+                        if (
+                            detailEmployeeId &&
+                            String(detailEmployeeId) ===
+                                String(employeeId)
+                        ) {
+                            detailEmployee =
+                                updated ||
+                                employee;
+
+                            renderDetailStatus(
+                                detailEmployee
+                            );
+                        }
+                    } catch (error) {
+                        /*
+                         * Restore the previous value if the
+                         * update failed.
+                         */
+                        select.value = oldStatus;
+
+                        alert(
+                            "Could not change employee status: " +
+                            error.message
+                        );
+                    } finally {
+                        select.disabled = false;
+                    }
+                }
+            );
+        });
+    }
+
+
+    /* =========================================================
+       Metrics
+       ========================================================= */
+
+    function renderMetrics() {
+        const employees =
+            state.employees;
+
+        const active =
+            employees.filter(
+                e =>
+                    e.employment_status ===
+                    "ACTIVE"
+            ).length;
+
+        const onleave =
+            employees.filter(
+                e =>
+                    e.employment_status ===
+                    "ON_LEAVE"
+            ).length;
+
+        const total =
+            $("[data-metric=total]");
+
+        const activeEl =
+            $("[data-metric=active]");
+
+        const leaveEl =
+            $("[data-metric=onleave]");
+
+        const assignments =
+            $("[data-metric=assignments]");
+
+        if (total) {
+            total.textContent =
+                employees.length;
+        }
+
+        if (activeEl) {
+            activeEl.textContent =
+                active;
+        }
+
+        if (leaveEl) {
+            leaveEl.textContent =
+                onleave;
+        }
+
+        /*
+         * Assignment count is intentionally not fetched for
+         * every employee here. Doing that would create a large
+         * number of API requests and make the Workforce page
+         * slow.
+         *
+         * It is updated when an employee's assignments are
+         * actually loaded.
+         */
+        if (assignments) {
+            if (
+                assignments.dataset.loaded !== "true"
+            ) {
+                assignments.textContent = "—";
+            }
+        }
+    }
+
+
+    /* =========================================================
+       Detail dialog
+       ========================================================= */
+
+    const dialog =
+        $("[data-employee-dialog]");
+
+
+    function renderDetailStatus(employee) {
+        const status =
+            $("[data-detail-status]");
+
+        if (!status) {
+            return;
+        }
+
+        const value =
+            employee?.employment_status ||
+            "ACTIVE";
+
+        const cls =
+            value === "ACTIVE"
+                ? " active"
+                : value === "TERMINATED"
+                    ? " warning"
+                    : "";
+
+        status.className =
+            "status" + cls;
+
+        status.innerHTML =
+            `<i></i>${esc(statusLabel(value))}`;
+    }
+
+
+    function renderDetail(employee) {
+        $("[data-detail-name]").textContent =
+            employee.name || "—";
+
+        $("[data-detail-number]").textContent =
+            employee.employee_number || "—";
+
+        $("[data-detail-number-2]").textContent =
+            employee.employee_number || "—";
+
+        $("[data-detail-phone]").textContent =
+            employee.phone || "—";
+
+        $("[data-detail-email]").textContent =
+            employee.email || "—";
+
+        $("[data-detail-position]").textContent =
+            employee.position || "—";
+
+        $("[data-detail-department]").textContent =
+            employee.department || "—";
+
+        $("[data-detail-rate]").textContent =
+            fmtMoney(
+                getLaborRate(employee)
+            );
+
+        renderDetailStatus(employee);
+    }
+
+
+    async function openDetail(id) {
+        detailEmployeeId = id;
+        detailEmployee = null;
+
+        /*
+         * Reset assignment metric until the employee's
+         * assignment endpoint has actually been loaded.
+         */
+        const assignmentMetric =
+            $("[data-metric=assignments]");
+
+        if (assignmentMetric) {
+            assignmentMetric.textContent = "—";
+            assignmentMetric.dataset.loaded =
+                "false";
+        }
+
+        /*
+         * Open the dialog immediately with a loading state.
+         * The old implementation waited for the assignments
+         * request before showing the dialog.
+         */
+        dialog.showModal();
+
+        $("[data-detail-name]").textContent =
+            "Loading…";
+
+        $("[data-detail-number]").textContent =
+            "Loading employee profile";
+
+        $("[data-detail-number-2]").textContent =
+            "—";
+
+        $("[data-detail-phone]").textContent =
+            "—";
+
+        $("[data-detail-email]").textContent =
+            "—";
+
+        $("[data-detail-position]").textContent =
+            "—";
+
+        $("[data-detail-department]").textContent =
+            "—";
+
+        $("[data-detail-rate]").textContent =
+            "—";
+
+        renderDetailStatus({
+            employment_status: "ACTIVE"
+        });
+
+        try {
+            /*
+             * Only the employee profile is required to open
+             * the dialog.
+             */
+            const detail =
+                await api(`${API}${id}/`);
+
+            /*
+             * Protect against the user opening another employee
+             * while this request was still in flight.
+             */
+            if (
+                String(detailEmployeeId) !==
+                String(id)
+            ) {
+                return;
+            }
+
+            detailEmployee = detail;
+
+            renderDetail(detail);
+
+            /*
+             * Load only the currently active tab.
+             * This is no longer blocking the profile dialog.
+             */
+            loadTab(activeTab);
+
+        } catch (error) {
+            if (
+                String(detailEmployeeId) !==
+                String(id)
+            ) {
+                return;
+            }
+
+            $("[data-detail-name]").textContent =
+                "Could not load employee";
+
+            $("[data-detail-number]").textContent =
+                error.message;
+
+            const panel =
+                $("[data-tab-panel]");
+
+            if (panel) {
+                panel.innerHTML = `
+                    <div class="employee-inline-message">
+                        <strong>
+                            Could not load employee profile.
+                        </strong>
+                        <span>
+                            ${esc(error.message)}
+                        </span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+
+    /* =========================================================
+       Project assignments
+       ========================================================= */
+
+    async function loadAssignments() {
+        const panel =
+            $("[data-tab-panel]");
+
+        if (panel) {
+            panel.innerHTML = `
+                <div class="employee-loading">
+                    Loading project assignments…
+                </div>
+            `;
+        }
+
+        try {
+            state.assignments =
+                await api(
+                    `${API}${detailEmployeeId}/projects/`
+                );
+
+            /*
+             * Update the metric after the actual assignment
+             * request completes.
+             */
+            const assignmentMetric =
+                $("[data-metric=assignments]");
+
+            if (assignmentMetric) {
+                assignmentMetric.textContent =
+                    state.assignments.length;
+
+                assignmentMetric.dataset.loaded =
+                    "true";
+            }
+
+        } catch (error) {
+            state.assignments = [];
+
+            const assignmentMetric =
+                $("[data-metric=assignments]");
+
+            if (assignmentMetric) {
+                assignmentMetric.textContent = "0";
+                assignmentMetric.dataset.loaded =
+                    "true";
+            }
+
+            if (panel) {
+                panel.innerHTML = `
+                    <div class="employee-inline-message">
+                        <strong>
+                            Could not load assignments.
+                        </strong>
+                        <span>
+                            ${esc(error.message)}
+                        </span>
+                    </div>
+                `;
+            }
+
+            return;
+        }
+
+        renderMetrics();
+    }
+
+
+    function assignmentTable() {
+        const cols = [
+            "Project",
+            "Role",
+            "Assigned",
+            "Released",
+            ""
+        ];
+
+        const head = `
+            <table>
+                <thead>
+                    <tr>
+                        ${cols
+                            .map(c => `<th>${c}</th>`)
+                            .join("")}
+                    </tr>
+                </thead>
+        `;
+
+        if (!state.assignments.length) {
+            return `
+                ${head}
+                <tbody>
+                    <tr>
+                        <td colspan="${cols.length}">
+                            <strong>
+                                No project assignments for this employee.
+                            </strong>
+                        </td>
+                    </tr>
+                </tbody>
+                </table>
+            `;
+        }
+
+        const rows =
+            state.assignments
+                .map(a => `
+                    <tr>
+                        <td>
+                            <strong>
+                                ${esc(
+                                    a.project?.name ||
+                                    "—"
+                                )}
+                            </strong>
+
+                            <span>
+                                ${esc(
+                                    a.project?.code ||
+                                    "—"
+                                )}
+                            </span>
+                        </td>
+
+                        <td>
+                            ${esc(
+                                a.role_on_project ||
+                                "—"
+                            )}
+                        </td>
+
+                        <td>
+                            ${esc(
+                                a.assigned_at ||
+                                "—"
+                            )}
+                        </td>
+
+                        <td>
+                            ${esc(
+                                a.released_at ||
+                                "—"
+                            )}
+                        </td>
+
+                        <td>
+                            <button
+                                type="button"
+                                class="tab-action"
+                                data-release="${esc(a.id)}"
+                                ${a.released_at
+                                    ? "disabled"
+                                    : ""}
+                            >
+                                Release
+                            </button>
+
+                            <button
+                                type="button"
+                                class="tab-action danger"
+                                data-unassign="${esc(a.id)}"
+                            >
+                                Unassign
+                            </button>
+                        </td>
+                    </tr>
+                `)
+                .join("");
+
+        return `
+            ${head}
+            <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+
+    function assignForm() {
+        const options =
+            state.projects
+                .map(p => `
+                    <option value="${esc(p.id)}">
+                        ${esc(p.code)} — ${esc(p.name)}
+                    </option>
+                `)
+                .join("");
+
+        return `
+            <form
+                class="employee-assign-form"
+                data-assign-form
+            >
+
+                <label>
+                    Project *
+                    <select
+                        name="project_id"
+                        required
+                    >
+                        <option
+                            value=""
+                            disabled
+                            selected
+                        >
+                            Select project…
+                        </option>
+
+                        ${options}
+                    </select>
+                </label>
+
+                <label>
+                    Role on project
+                    <input
+                        type="text"
+                        name="role_on_project"
+                        placeholder="e.g. Site Lead"
+                    >
+                </label>
+
+                <label>
+                    Assigned date *
+                    <input
+                        type="date"
+                        name="assigned_at"
+                        required
+                    >
+                </label>
+
+                <button
+                    type="submit"
+                    class="primary-button"
+                >
+                    Assign
+                </button>
+
+                <button
+                    type="button"
+                    class="quiet-button"
+                    data-assign-cancel
+                >
+                    Cancel
+                </button>
+
+            </form>
+        `;
+    }
+
+
+    /* =========================================================
+       Phase assignments
+       ========================================================= */
+
+    async function loadPhaseAssignments() {
+        state.phases = [];
+
+        try {
+            if (!state.projects.length) {
+                state.projects =
+                    await fetchAll(PROJECTS_API);
+            }
+
+            /*
+             * Keep the existing phase behavior, but only execute
+             * it when the user actually opens Phase assignments.
+             */
+            for (const project of state.projects) {
+                try {
+                    const phases =
+                        await fetchAll(
+                            `${PROJECTS_API}${project.id}/phases/`
+                        );
+
+                    phases.forEach(phase => {
+                        const responsibleId =
+                            phase.responsible_emp_id ||
+                            phase.responsible_employee?.id ||
+                            phase.responsible_emp?.id ||
+                            null;
+
+                        if (
+                            responsibleId &&
+                            String(responsibleId) ===
+                                String(detailEmployeeId)
+                        ) {
+                            state.phases.push({
+                                ...phase,
+                                project
+                            });
+                        }
+                    });
+                } catch (e) {
+                    /*
+                     * Ignore a project whose phase endpoint
+                     * cannot be loaded.
+                     */
+                }
+            }
+
+        } catch (e) {
+            state.phases = [];
+        }
+    }
+
+
+    function phaseTable() {
+        if (!state.phases.length) {
+            return `
+                <div class="employee-inline-message">
+                    <strong>
+                        No phase assignments found.
+                    </strong>
+
+                    <span>
+                        This employee is not currently responsible
+                        for a project phase.
+                    </span>
+                </div>
+            `;
+        }
+
+        const rows =
+            state.phases
+                .map(phase => `
+                    <tr>
+                        <td>
+                            <strong>
+                                ${esc(
+                                    phase.name ||
+                                    "Unnamed phase"
+                                )}
+                            </strong>
+
+                            <span>
+                                ${esc(
+                                    phase.project?.code ||
+                                    phase.project?.name ||
+                                    "—"
+                                )}
+                            </span>
+                        </td>
+
+                        <td>
+                            ${esc(
+                                phase.project?.name ||
+                                "—"
+                            )}
+                        </td>
+
+                        <td>
+                            ${esc(
+                                phase.status ||
+                                "—"
+                            )}
+                        </td>
+
+                        <td>
+                            <button
+                                type="button"
+                                class="tab-action danger"
+                                data-unassign-phase="${esc(
+                                    phase.id
+                                )}"
+                                data-phase-project="${esc(
+                                    phase.project?.id || ""
+                                )}"
+                            >
+                                Remove
+                            </button>
+                        </td>
+                    </tr>
+                `)
+                .join("");
+
+        return `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Phase</th>
+                        <th>Project</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        `;
+    }
+
+
+    function phaseAssignForm() {
+        const options =
+            state.projects
+                .map(p => `
+                    <option value="${esc(p.id)}">
+                        ${esc(p.code)} — ${esc(p.name)}
+                    </option>
+                `)
+                .join("");
+
+        return `
+            <form
+                class="employee-assign-form"
+                data-phase-assign-form
+            >
+
+                <label>
+                    Project *
+                    <select
+                        name="project_id"
+                        data-phase-project
+                        required
+                    >
+                        <option
+                            value=""
+                            disabled
+                            selected
+                        >
+                            Select project…
+                        </option>
+
+                        ${options}
+                    </select>
+                </label>
+
+                <label>
+                    Phase *
+                    <select
+                        name="phase_id"
+                        data-phase-select
+                        required
+                        disabled
+                    >
+                        <option value="">
+                            Select project first…
+                        </option>
+                    </select>
+                </label>
+
+                <span></span>
+
+                <button
+                    type="submit"
+                    class="primary-button"
+                >
+                    Assign
+                </button>
+
+                <button
+                    type="button"
+                    class="quiet-button"
+                    data-phase-cancel
+                >
+                    Cancel
+                </button>
+
+            </form>
+        `;
+    }
+
+
+    async function loadPhasesForProject(projectId) {
+        const phaseSelect =
+            $("[data-phase-select]");
+
+        if (!phaseSelect) {
+            return;
+        }
+
+        phaseSelect.disabled = true;
+
+        phaseSelect.innerHTML = `
+            <option value="">
+                Loading phases…
+            </option>
+        `;
+
+        try {
+            const phases =
+                await fetchAll(
+                    `${PROJECTS_API}${projectId}/phases/`
+                );
+
+            if (!phases.length) {
+                phaseSelect.innerHTML = `
+                    <option value="">
+                        No phases found
+                    </option>
+                `;
+
+                return;
+            }
+
+            phaseSelect.innerHTML = `
+                <option
+                    value=""
+                    disabled
+                    selected
+                >
+                    Select phase…
+                </option>
+
+                ${phases
+                    .map(
+                        phase => `
+                            <option value="${esc(phase.id)}">
+                                ${esc(
+                                    phase.name ||
+                                    phase.phase_name ||
+                                    `Phase ${phase.id}`
+                                )}
+                            </option>
+                        `
+                    )
+                    .join("")}
+            `;
+
+            phaseSelect.disabled = false;
+
+        } catch (e) {
+            phaseSelect.innerHTML = `
+                <option value="">
+                    Could not load phases
+                </option>
+            `;
+        }
+    }
+
+
+    /* =========================================================
+       Tabs
+       ========================================================= */
+
+    async function loadTab(tab) {
+        activeTab = tab;
+
+        const panel =
+            $("[data-tab-panel]");
+
+        if (!panel) {
+            return;
+        }
+
+        $$("[data-tab]").forEach(button => {
+            button.classList.toggle(
+                "active",
+                button.dataset.tab === tab
+            );
+        });
+
+
+        /* -----------------------------------------------------
+           Project assignments
+           ----------------------------------------------------- */
+
+        if (tab === "assignments") {
+            await loadAssignments();
+
+            /*
+             * User may have changed tabs while the request
+             * was loading.
+             */
+            if (activeTab !== "assignments") {
+                return;
+            }
+
+            panel.innerHTML =
+                assignmentTable();
+
+            bindAssignmentActions(panel);
+
+            return;
+        }
+
+
+        /* -----------------------------------------------------
+           Assign project
+           ----------------------------------------------------- */
+
+        if (tab === "assign") {
+            panel.innerHTML = `
+                <div class="employee-loading">
+                    Loading projects…
+                </div>
+            `;
+
+            if (!state.projects.length) {
+                try {
+                    state.projects =
+                        await fetchAll(PROJECTS_API);
+                } catch (e) {
+                    state.projects = [];
+                }
+            }
+
+            if (activeTab !== "assign") {
+                return;
+            }
+
+            panel.innerHTML =
+                assignForm();
+
+            const form =
+                $("[data-assign-form]");
+
+            const cancel =
+                $("[data-assign-cancel]");
+
+            if (cancel) {
+                cancel.addEventListener(
+                    "click",
+                    () => loadTab("assignments")
+                );
+            }
+
+            if (form) {
+                form.addEventListener(
+                    "submit",
+                    async e => {
+                        e.preventDefault();
+
+                        const payload =
+                            Object.fromEntries(
+                                new FormData(form)
+                                    .entries()
+                            );
+
+                        if (
+                            !payload.role_on_project
+                        ) {
+                            delete payload.role_on_project;
+                        }
+
+                        try {
+                            await api(
+                                `${API}${detailEmployeeId}/projects/`,
+                                {
+                                    method: "POST",
+                                    body:
+                                        JSON.stringify(
+                                            payload
+                                        )
+                                }
+                            );
+
+                            await loadTab(
+                                "assignments"
+                            );
+
+                        } catch (err) {
+                            alert(
+                                "Could not assign project: " +
+                                err.message
+                            );
+                        }
+                    }
+                );
+            }
+
+            return;
+        }
+
+
+        /* -----------------------------------------------------
+           Phase assignments
+           ----------------------------------------------------- */
+
+        if (tab === "phases") {
+            panel.innerHTML = `
+                <div class="employee-loading">
+                    Loading phase assignments…
+                </div>
+            `;
+
+            if (!state.projects.length) {
+                try {
+                    state.projects =
+                        await fetchAll(PROJECTS_API);
+                } catch (e) {
+                    state.projects = [];
+                }
+            }
+
+            await loadPhaseAssignments();
+
+            if (activeTab !== "phases") {
+                return;
+            }
+
+            panel.innerHTML =
+                phaseTable() +
+                `
+                    <div
+                        style="border-top:1px solid var(--line);"
+                    >
+                        ${phaseAssignForm()}
+                    </div>
+                `;
+
+            bindPhaseActions(panel);
+
+            return;
+        }
+    }
+
+
+    /* =========================================================
+       Assignment actions
+       ========================================================= */
+
+    function bindAssignmentActions(panel) {
+        $$(
+            "[data-release]",
+            panel
+        ).forEach(btn => {
+            btn.addEventListener(
+                "click",
+                async () => {
+                    const aid =
+                        btn.dataset.release;
+
+                    if (
+                        !confirm(
+                            "Release this assignment?"
+                        )
+                    ) {
+                        return;
+                    }
+
+                    btn.disabled = true;
+
+                    try {
+                        await api(
+                            `${API}${detailEmployeeId}/projects/${aid}/`,
+                            {
+                                method: "PATCH",
+                                body:
+                                    JSON.stringify({
+                                        released_at:
+                                            new Date()
+                                                .toISOString()
+                                                .slice(0, 10)
+                                    })
+                            }
+                        );
+
+                        await loadTab(
+                            "assignments"
+                        );
+
+                    } catch (e) {
+                        btn.disabled = false;
+
+                        alert(
+                            "Could not release assignment: " +
+                            e.message
+                        );
+                    }
+                }
+            );
+        });
+
+
+        $$(
+            "[data-unassign]",
+            panel
+        ).forEach(btn => {
+            btn.addEventListener(
+                "click",
+                async () => {
+                    const aid =
+                        btn.dataset.unassign;
+
+                    if (
+                        !confirm(
+                            "Remove this assignment entirely?"
+                        )
+                    ) {
+                        return;
+                    }
+
+                    btn.disabled = true;
+
+                    try {
+                        await api(
+                            `${API}${detailEmployeeId}/projects/${aid}/`,
+                            {
+                                method: "DELETE"
+                            }
+                        );
+
+                        await loadTab(
+                            "assignments"
+                        );
+
+                    } catch (e) {
+                        btn.disabled = false;
+
+                        alert(
+                            "Could not unassign: " +
+                            e.message
+                        );
+                    }
+                }
+            );
+        });
+    }
+
+
+    /* =========================================================
+       Phase actions
+       ========================================================= */
+
+    function bindPhaseActions(panel) {
+        const projectSelect =
+            $("[data-phase-project]", panel);
+
+        const phaseSelect =
+            $("[data-phase-select]", panel);
+
+        if (projectSelect) {
+            projectSelect.addEventListener(
+                "change",
+                () =>
+                    loadPhasesForProject(
+                        projectSelect.value
+                    )
+            );
+        }
+
+
+        const form =
+            $(
+                "[data-phase-assign-form]",
+                panel
+            );
+
+        if (form) {
+            const cancel =
+                $("[data-phase-cancel]", form);
+
+            if (cancel) {
+                cancel.addEventListener(
+                    "click",
+                    () => loadTab("phases")
+                );
+            }
+
+            form.addEventListener(
+                "submit",
+                async e => {
+                    e.preventDefault();
+
+                    const phaseId =
+                        phaseSelect?.value;
+
+                    if (!phaseId) {
+                        return;
+                    }
+
+                    try {
+                        await api(
+                            `${PROJECTS_API}${phaseId}/`,
+                            {
+                                method: "PATCH",
+                                body:
+                                    JSON.stringify({
+                                        responsible_emp_id:
+                                            detailEmployeeId
+                                    })
+                            }
+                        );
+
+                        await loadTab(
+                            "phases"
+                        );
+
+                    } catch (err) {
+                        alert(
+                            "Could not assign employee to phase: " +
+                            err.message
+                        );
+                    }
+                }
+            );
+        }
+
+
+        $$(
+            "[data-unassign-phase]",
+            panel
+        ).forEach(btn => {
+            btn.addEventListener(
+                "click",
+                async () => {
+                    const phaseId =
+                        btn.dataset.unassignPhase;
+
+                    if (
+                        !confirm(
+                            "Remove this employee from the phase?"
+                        )
+                    ) {
+                        return;
+                    }
+
+                    btn.disabled = true;
+
+                    try {
+                        await api(
+                            `${PROJECTS_API}${phaseId}/`,
+                            {
+                                method: "PATCH",
+                                body:
+                                    JSON.stringify({
+                                        responsible_emp_id:
+                                            null
+                                    })
+                            }
+                        );
+
+                        await loadTab("phases");
+
+                    } catch (err) {
+                        btn.disabled = false;
+
+                        alert(
+                            "Could not remove phase assignment: " +
+                            err.message
+                        );
+                    }
+                }
+            );
+        });
+    }
+
+
+    /* =========================================================
+       Employee create / edit modal
+       ========================================================= */
+
+    const employeeOverlay =
+        $("[data-employee-create]");
+
+    const employeeForm =
+        $("[data-employee-form]");
+
+
+    function openEmployeeForm(employee = null) {
+        if (
+            !employeeOverlay ||
+            !employeeForm
+        ) {
+            return;
+        }
+
+        employeeForm.reset();
+
+        const title =
+            $("[data-employee-form-title]");
+
+        const eyebrow =
+            $("[data-employee-form-eyebrow]");
+
+        const submit =
+            $("[data-employee-form-submit]");
+
+        const idInput =
+            $("[data-employee-edit-id]");
+
+
+        if (employee) {
+            title.textContent =
+                "Edit employee";
+
+            eyebrow.textContent =
+                "EMPLOYEE MANAGEMENT";
+
+            submit.textContent =
+                "Save changes";
+
+            idInput.value =
+                employee.id || "";
+
+            employeeForm.elements.name.value =
+                employee.name || "";
+
+            employeeForm.elements.employee_number.value =
+                employee.employee_number || "";
+
+            employeeForm.elements.phone.value =
+                employee.phone || "";
+
+            employeeForm.elements.email.value =
+                employee.email || "";
+
+            employeeForm.elements.position.value =
+                employee.position || "";
+
+            employeeForm.elements.department.value =
+                employee.department || "";
+
+            const rate =
+                getLaborRate(employee);
+
+            employeeForm.elements.labor_rate.value =
+                rate ?? "";
+
+            employeeForm.elements.employment_status.value =
+                employee.employment_status ||
+                "ACTIVE";
+
+        } else {
+            title.textContent =
+                "New employee";
+
+            eyebrow.textContent =
+                "OPERATIONS";
+
+            submit.textContent =
+                "Create employee";
+
+            idInput.value = "";
+
+            employeeForm.elements.employment_status.value =
+                "ACTIVE";
+        }
+
+
+        employeeOverlay.hidden = false;
+
+        /*
+         * Prevent the browser from restoring the old form
+         * position and focus the name field.
+         */
+        requestAnimationFrame(() => {
+            const firstInput =
+                employeeForm.elements.name;
+
+            if (firstInput) {
+                firstInput.focus();
+            }
+        });
+    }
+
+
+    function closeEmployeeForm() {
+        if (!employeeOverlay) {
+            return;
+        }
+
+        employeeOverlay.hidden = true;
+
+        if (employeeForm) {
+            employeeForm.reset();
+        }
+
+        const id =
+            $("[data-employee-edit-id]");
+
+        if (id) {
+            id.value = "";
+        }
+    }
+
+
+    async function submitEmployeeForm(e) {
+        e.preventDefault();
+
+        const form =
+            e.currentTarget;
+
+        const employeeId =
+            $("[data-employee-edit-id]").value;
+
+
+        const formData =
+            Object.fromEntries(
+                new FormData(form).entries()
+            );
+
+
+        const payload = {};
+
+
+        Object.entries(formData)
+            .forEach(([key, value]) => {
+                if (
+                    key ===
+                        "csrfmiddlewaretoken" ||
+                    key ===
+                        "employee_edit_id"
+                ) {
+                    return;
+                }
+
+                if (
+                    value === "" ||
+                    value == null
+                ) {
+                    return;
+                }
+
+                payload[key] = value;
+            });
+
+
+        /*
+         * Convert labor rate into a number so Django receives
+         * a proper numeric value.
+         */
+        if (
+            payload.labor_rate !== undefined
+        ) {
+            const rate =
+                Number(payload.labor_rate);
+
+            if (Number.isFinite(rate)) {
+                payload.labor_rate =
+                    rate;
+            } else {
+                delete payload.labor_rate;
+            }
+        }
+
+
+        const submitButton =
+            $(
+                "[data-employee-form-submit]"
+            );
+
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+
+        try {
+            let savedEmployee;
+
+            if (employeeId) {
+                savedEmployee =
+                    await api(
+                        `${API}${employeeId}/`,
+                        {
+                            method: "PATCH",
+                            body:
+                                JSON.stringify(
+                                    payload
+                                )
+                        }
+                    );
+            } else {
+                savedEmployee =
+                    await api(
+                        API,
+                        {
+                            method: "POST",
+                            body:
+                                JSON.stringify(
+                                    payload
+                                )
+                        }
+                    );
+            }
+
+
+            closeEmployeeForm();
+
+
+            /*
+             * Refresh the table.
+             */
+            await refresh();
+
+
+            /*
+             * If editing, reopen the same employee's
+             * profile using the fresh data.
+             */
+            if (employeeId) {
+                await openDetail(
+                    employeeId
+                );
+            } else if (
+                savedEmployee?.id
+            ) {
+                await openDetail(
+                    savedEmployee.id
+                );
+            }
+
+        } catch (err) {
+            alert(
+                employeeId
+                    ? "Could not update employee: " +
+                      err.message
+                    : "Could not create employee: " +
+                      err.message
+            );
+
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+    }
+
+
+    /* =========================================================
+       Delete employee
+       ========================================================= */
+
+    async function deleteEmployee() {
+        if (!detailEmployeeId) {
+            return;
+        }
+
+        if (
+            !confirm(
+                "Delete this employee? Existing protected assignments may prevent deletion."
+            )
+        ) {
+            return;
+        }
+
+        try {
+            await api(
+                `${API}${detailEmployeeId}/`,
+                {
+                    method: "DELETE"
+                }
+            );
+
+            dialog.close();
+
+            await refresh();
+
+        } catch (e) {
+            alert(
+                "Could not delete employee: " +
+                e.message
+            );
+        }
+    }
+
+
+    /* =========================================================
+       Dialog bindings
+       ========================================================= */
+
+    function bindDialog() {
+        if (!dialog) {
+            return;
+        }
+
+        const actions =
+            $(".employee-dialog-actions");
+
+
+        /*
+         * Add Edit/Delete buttons once.
+         */
+        if (
+            actions &&
+            !$("[data-employee-edit]", actions)
+        ) {
+            actions.insertAdjacentHTML(
+                "afterbegin",
+                `
+                    <button
+                        type="button"
+                        class="quiet-button"
+                        data-employee-edit
+                    >
+                        Edit
+                    </button>
+
+                    <button
+                        type="button"
+                        class="quiet-button"
+                        data-employee-delete
+                    >
+                        Delete
+                    </button>
+                `
+            );
+        }
+
+
+        const editButton =
+            $("[data-employee-edit]");
+
+        const deleteButton =
+            $("[data-employee-delete]");
+
+        const closeButton =
+            $("[data-employee-close]");
+
+
+        if (editButton) {
+            editButton.addEventListener(
+                "click",
+                () => {
+                    if (detailEmployee) {
+                        openEmployeeForm(
+                            detailEmployee
+                        );
+                    }
+                }
+            );
+        }
+
+
+        if (deleteButton) {
+            deleteButton.addEventListener(
+                "click",
+                deleteEmployee
+            );
+        }
+
+
+        if (closeButton) {
+            closeButton.addEventListener(
+                "click",
+                () => dialog.close()
+            );
+        }
+
+
+        dialog.addEventListener(
+            "click",
+            e => {
+                if (e.target === dialog) {
+                    dialog.close();
+                }
+            }
+        );
+
+
+        $$("[data-tab]").forEach(btn => {
+            btn.addEventListener(
+                "click",
+                () =>
+                    loadTab(
+                        btn.dataset.tab
+                    )
+            );
+        });
+    }
+
+
+    /* =========================================================
+       Create / Edit bindings
+       ========================================================= */
+
+    function bindCreate() {
+        const newButton =
+            $("[data-employee-new]");
+
+        if (newButton) {
+            newButton.addEventListener(
+                "click",
+                () => openEmployeeForm()
+            );
+        }
+
+
+        const closeButton =
+            $("[data-employee-create-close]");
+
+        if (closeButton) {
+            closeButton.addEventListener(
+                "click",
+                closeEmployeeForm
+            );
+        }
+
+
+        const cancelButton =
+            $("[data-employee-create-cancel]");
+
+        if (cancelButton) {
+            cancelButton.addEventListener(
+                "click",
+                closeEmployeeForm
+            );
+        }
+
+
+        if (employeeForm) {
+            employeeForm.addEventListener(
+                "submit",
+                submitEmployeeForm
+            );
+        }
+
+
+        if (employeeOverlay) {
+            employeeOverlay.addEventListener(
+                "click",
+                e => {
+                    if (
+                        e.target ===
+                        employeeOverlay
+                    ) {
+                        closeEmployeeForm();
+                    }
+                }
+            );
+        }
+
+
+        /*
+         * Escape closes the employee form.
+         */
+        document.addEventListener(
+            "keydown",
+            e => {
+                if (
+                    e.key === "Escape" &&
+                    employeeOverlay &&
+                    !employeeOverlay.hidden
+                ) {
+                    closeEmployeeForm();
+                }
+            }
+        );
+    }
+
+
+    /* =========================================================
+       Filters
+       ========================================================= */
+
+    function bindFilters() {
+        $$("[data-status-filter]")
+            .forEach(btn => {
+                btn.addEventListener(
+                    "click",
+                    () => {
+                        state.statusFilter =
+                            btn.dataset.statusFilter;
+
+                        $$(
+                            "[data-status-filter]"
+                        ).forEach(button => {
+                            button.classList.remove(
+                                "active"
+                            );
+                        });
+
+                        btn.classList.add(
+                            "active"
+                        );
+
+                        renderRows();
+                    }
+                );
+            });
+
+
+        const searchInput =
+            $("#employee-search-input");
+
+        if (searchInput) {
+            searchInput.addEventListener(
+                "input",
+                () => {
+                    state.search =
+                        searchInput.value;
+
+                    renderRows();
+                }
+            );
+        }
+    }
+
+
+    /* =========================================================
+       Refresh
+       ========================================================= */
+
+    async function refresh() {
+        state.employees =
+            await fetchAll(API);
+
+        state.assignments = [];
+
+        renderMetrics();
+        renderRows();
+    }
+
+
+    /* =========================================================
+       Init
+       ========================================================= */
+
+    document.addEventListener(
+        "DOMContentLoaded",
+        async () => {
+            bindDialog();
+            bindCreate();
+            bindFilters();
+
+            const allButton =
+                $(
+                    "[data-status-filter='all']"
+                );
+
+            if (allButton) {
+                allButton.classList.add(
+                    "active"
+                );
+            }
+
+
+            try {
+                /*
+                 * Only employees are loaded when the Workforce
+                 * page opens.
+                 *
+                 * Projects are NOT loaded here anymore.
+                 * They are loaded only when the user chooses
+                 * Assign project or Phase assignments.
+                 */
+                await refresh();
+
+            } catch (e) {
+                const tbody =
+                    $("[data-employee-rows]");
+
+                if (tbody) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td>
+                                <strong>
+                                    Could not load employees
+                                </strong>
+
+                                <span>
+                                    ${esc(e.message)}
+                                </span>
+                            </td>
+
+                            <td>—</td>
+                            <td>—</td>
+                            <td>—</td>
+                            <td>—</td>
+                        </tr>
+                    `;
+                }
+            }
+        }
+    );
+
 })();

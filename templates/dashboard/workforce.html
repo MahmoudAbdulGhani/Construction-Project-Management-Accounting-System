@@ -1,49 +1,700 @@
-{% extends "dashboard/base_dashboard.html" %}{% load static %}
-{% block title %}Workforce | Cedar Control{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'css/workforce.css' %}">{% endblock %}
-{% block dashboard_content %}
-<section class="page-heading">
-  <div><p class="eyebrow">People &amp; assignments</p><h1>Workforce</h1><p>Coordinate employees, labor rates, and active project assignments.</p></div>
-  <button class="primary-button" type="button" data-workforce-add>＋ Employee</button>
-</section>
-<section class="module-stat-grid">
-  <article class="module-stat tone-1"><span>Active employees</span><strong data-metric="active">—</strong><em>Currently employed</em></article>
-  <article class="module-stat tone-2"><span>On leave</span><strong data-metric="onleave">—</strong><em>Currently away</em></article>
-  <article class="module-stat tone-3"><span>Active assignments</span><strong data-metric="assignments">—</strong><em>Across all projects</em></article>
-  <article class="module-stat tone-4"><span>Projects staffed</span><strong data-metric="projects">—</strong><em>With employees</em></article>
-</section>
-<section class="panel table-panel module-table">
-  <div class="filterbar"><div class="local-search">⌕ <span>Search workforce</span><input type="text" id="workforce-search-input" placeholder="Name, employee number, position, department" aria-label="Search workforce"></div><button class="quiet-button active" type="button" data-status-filter="all">Status: All</button><button class="quiet-button" type="button" data-status-filter="ACTIVE">Active</button><button class="quiet-button" type="button" data-status-filter="ON_LEAVE">On leave</button><button class="quiet-button" type="button" data-status-filter="TERMINATED">Terminated</button></div>
-  <div class="workforce-page-error" data-workforce-page-error hidden role="alert"></div>
-  <div class="responsive-table"><table><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Assigned project</th><th>Labor rate</th><th>Status / Actions</th></tr></thead><tbody data-workforce-rows><tr><td colspan="6"><strong>Loading workforce…</strong><span>Fetching live employees and assignments</span></td></tr></tbody></table></div>
-</section>
+{% extends "dashboard/base_dashboard.html" %}
+{% load static %}
 
-<dialog class="workforce-dialog" data-employee-form-dialog><form class="workforce-dialog-shell" data-employee-form novalidate>
-  <header class="workforce-dialog-head"><div><p class="eyebrow">WORKFORCE</p><h2 data-employee-form-title>New employee</h2></div><button type="button" class="workforce-close" data-employee-form-close aria-label="Close">×</button></header>
-  <div class="workforce-form-error" data-employee-form-error hidden role="alert"></div>
-  <div class="workforce-form-grid">
-    <label>Name *<input name="name" required maxlength="255"><small data-field-error="name"></small></label><label>Employee number *<input name="employee_number" required maxlength="100"><small data-field-error="employee_number"></small></label>
-    <label>Phone<input name="phone" maxlength="50"><small data-field-error="phone"></small></label><label>Email<input name="email" type="email" maxlength="255"><small data-field-error="email"></small></label>
-    <label>Position<input name="position" maxlength="150"><small data-field-error="position"></small></label><label>Department<input name="department" maxlength="150"><small data-field-error="department"></small></label>
-    <label>Labor rate<input name="labor_rate" type="number" min="0" step="0.01"><small data-field-error="labor_rate"></small></label><label>Employment status<select name="employment_status"><option value="ACTIVE">Active</option><option value="ON_LEAVE">On leave</option><option value="TERMINATED">Terminated</option></select><small data-field-error="employment_status"></small></label>
-  </div><footer class="workforce-dialog-actions"><button type="button" class="quiet-button" data-employee-form-cancel>Cancel</button><button type="submit" class="primary-button" data-employee-save>Save employee</button></footer>
-</form></dialog>
-
-<dialog class="workforce-dialog workforce-detail-dialog" data-employee-detail-dialog><div class="workforce-dialog-shell">
-  <header class="workforce-dialog-head"><div><p class="eyebrow">EMPLOYEE DETAILS</p><h2 data-detail-name>—</h2><p data-detail-number>—</p></div><button type="button" class="workforce-close" data-detail-close aria-label="Close">×</button></header>
-  <div class="workforce-inline-message" data-detail-message hidden role="alert"></div>
-  <div class="workforce-detail-grid"><div><span>Phone</span><strong data-detail-phone>—</strong></div><div><span>Email</span><strong data-detail-email>—</strong></div><div><span>Position</span><strong data-detail-position>—</strong></div><div><span>Department</span><strong data-detail-department>—</strong></div><div><span>Labor rate</span><strong data-detail-rate>—</strong></div><div><span>Status</span><strong data-detail-status>—</strong></div></div>
-  <section class="workforce-assignments"><div class="workforce-section-head"><div><h3>Project assignments</h3><p>Manage this employee’s project work.</p></div><button class="quiet-button" type="button" data-assignment-new>Assign project</button></div><div data-assignment-state><p class="workforce-state">Loading assignments…</p></div></section>
-  <footer class="workforce-dialog-actions"><button type="button" class="quiet-button danger" data-employee-delete>Delete employee</button><button type="button" class="quiet-button" data-employee-edit>Edit profile</button><button type="button" class="primary-button" data-detail-close>Done</button></footer>
-</div></dialog>
-
-<dialog class="workforce-dialog" data-assignment-dialog><form class="workforce-dialog-shell" data-assignment-form novalidate>
-  <header class="workforce-dialog-head"><div><p class="eyebrow">PROJECT ASSIGNMENT</p><h2 data-assignment-title>Assign project</h2></div><button type="button" class="workforce-close" data-assignment-close aria-label="Close">×</button></header>
-  <div class="workforce-form-error" data-assignment-error hidden role="alert"></div>
-  <div class="workforce-form-grid"><label data-project-field>Project *<select name="project_id" required data-assignment-project><option value="">Loading projects…</option></select><small data-field-error="project_id"></small></label><label>Role on project<input name="role_on_project" maxlength="150"><small data-field-error="role_on_project"></small></label><label data-assigned-field>Assigned date *<input name="assigned_at" type="date" required><small data-field-error="assigned_at"></small></label><label data-release-field hidden>Released date<input name="released_at" type="date"><small data-field-error="released_at"></small></label></div>
-  <footer class="workforce-dialog-actions"><button type="button" class="quiet-button" data-assignment-cancel>Cancel</button><button type="submit" class="primary-button" data-assignment-save>Save assignment</button></footer>
-</form></dialog>
-
-<dialog class="workforce-dialog workforce-confirm-dialog" data-delete-dialog><div class="workforce-dialog-shell"><header class="workforce-dialog-head"><div><p class="eyebrow">CONFIRM DELETE</p><h2>Delete employee?</h2></div><button type="button" class="workforce-close" data-delete-cancel aria-label="Close">×</button></header><p>This permanently deletes the employee. Existing protected relationships may prevent deletion.</p><div class="workforce-form-error" data-delete-error hidden role="alert"></div><footer class="workforce-dialog-actions"><button type="button" class="quiet-button" data-delete-cancel>Cancel</button><button type="button" class="primary-button danger" data-delete-confirm>Delete employee</button></footer></div></dialog>
+{% block title %}
+Workforce | Cedar Control
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/workforce.js' %}" defer></script>{% endblock %}
+
+
+{% block page_css %}
+<link
+    rel="stylesheet"
+    href="{% static 'css/workforce.css' %}"
+>
+{% endblock %}
+
+
+{% block dashboard_content %}
+
+<section class="page-heading">
+
+    <div>
+        <p class="eyebrow">
+            Operations
+        </p>
+
+        <h1>
+            Workforce
+        </h1>
+
+        <p>
+            Manage employee profiles, positions, departments,
+            labor rates, and project assignments.
+        </p>
+    </div>
+
+
+    <button
+        class="primary-button"
+        type="button"
+        data-employee-new
+    >
+        ＋ New employee
+    </button>
+
+</section>
+
+
+<!-- =========================================================
+     Workforce metrics
+     ========================================================= -->
+
+<section class="module-stat-grid">
+
+    <article class="module-stat tone-1">
+
+        <span>
+            Total employees
+        </span>
+
+        <strong data-metric="total">
+            0
+        </strong>
+
+        <em>
+            All records
+        </em>
+
+    </article>
+
+
+    <article class="module-stat tone-2">
+
+        <span>
+            Active
+        </span>
+
+        <strong data-metric="active">
+            0
+        </strong>
+
+        <em>
+            Currently employed
+        </em>
+
+    </article>
+
+
+    <article class="module-stat tone-3">
+
+        <span>
+            Assignments
+        </span>
+
+        <strong
+            data-metric="assignments"
+            data-loaded="false"
+        >
+            —
+        </strong>
+
+        <em>
+            Selected employee
+        </em>
+
+    </article>
+
+
+    <article class="module-stat tone-4">
+
+        <span>
+            On leave
+        </span>
+
+        <strong data-metric="onleave">
+            0
+        </strong>
+
+        <em>
+            Currently away
+        </em>
+
+    </article>
+
+</section>
+
+
+<!-- =========================================================
+     Employee table
+     ========================================================= -->
+
+<section class="panel table-panel module-table">
+
+    <div class="filterbar">
+
+        <div class="local-search">
+
+            🔍
+
+            <span>
+                Search employees
+            </span>
+
+            <input
+                type="text"
+                id="employee-search-input"
+                placeholder="Name, employee number, position, department, email"
+                aria-label="Search employees"
+            >
+
+        </div>
+
+
+        <button
+            type="button"
+            class="quiet-button"
+            data-status-filter="all"
+        >
+            Status: All
+        </button>
+
+
+        <button
+            type="button"
+            class="quiet-button"
+            data-status-filter="ACTIVE"
+        >
+            Active
+        </button>
+
+
+        <button
+            type="button"
+            class="quiet-button"
+            data-status-filter="ON_LEAVE"
+        >
+            On leave
+        </button>
+
+
+        <button
+            type="button"
+            class="quiet-button"
+            data-status-filter="TERMINATED"
+        >
+            Terminated
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>
+                        Employee
+                    </th>
+
+                    <th>
+                        Position
+                    </th>
+
+                    <th>
+                        Department
+                    </th>
+
+                    <th>
+                        Labor rate
+                    </th>
+
+                    <th>
+                        Status
+                    </th>
+                    <th>
+                        Actions
+                    </th>
+                </tr>
+
+            </thead>
+
+
+            <tbody data-employee-rows>
+
+                <tr>
+
+                    <td>
+
+                        <strong>
+                            Loading employees…
+                        </strong>
+
+                        <span>
+                            Fetching from the employees API
+                        </span>
+
+                    </td>
+
+                    <td>
+                        —
+                    </td>
+
+                    <td>
+                        —
+                    </td>
+
+                    <td>
+                        —
+                    </td>
+
+                    <td>
+                        —
+                    </td>
+
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     Employee detail dialog
+     ========================================================= -->
+
+<dialog
+    class="employee-dialog"
+    data-employee-dialog
+>
+
+    <div class="employee-dialog-shell">
+
+
+        <!-- -----------------------------------------------------
+             Profile header
+             ----------------------------------------------------- -->
+
+        <header class="employee-dialog-head">
+
+            <div>
+                <p class="eyebrow">
+                    EMPLOYEE PROFILE
+                </p>
+
+                <h2 data-detail-name>
+                    —
+                </h2>
+
+                <p data-detail-number>
+                    —
+                </p>
+            </div>
+
+            <div class="employee-dialog-actions">
+
+                <span
+                    class="status"
+                    data-detail-status
+                >
+                    —
+                </span>
+
+                <button
+                    type="button"
+                    aria-label="Close"
+                    class="employee-close"
+                    data-employee-close
+                >
+                    ×
+                </button>
+
+            </div>
+
+        </header>
+
+
+        <!-- -----------------------------------------------------
+             Profile information
+             ----------------------------------------------------- -->
+
+        <section class="panel table-panel module-table">
+
+            <div class="filterbar">
+
+                <div class="local-search">
+
+                    <span>
+                        Profile &amp; contact
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <div class="employee-fields">
+
+                <div>
+
+                    <span>
+                        Phone
+                    </span>
+
+                    <strong data-detail-phone>
+                        —
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        Email
+                    </span>
+
+                    <strong data-detail-email>
+                        —
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        Position
+                    </span>
+
+                    <strong data-detail-position>
+                        —
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        Department
+                    </span>
+
+                    <strong data-detail-department>
+                        —
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        Labor rate
+                    </span>
+
+                    <strong data-detail-rate>
+                        —
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        Employee number
+                    </span>
+
+                    <strong data-detail-number-2>
+                        —
+                    </strong>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- -----------------------------------------------------
+             Linked activity
+             ----------------------------------------------------- -->
+
+        <section class="panel table-panel module-table">
+
+            <div class="filterbar">
+
+                <div class="local-search">
+
+                    <span>
+                        Linked activity
+                    </span>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="quiet-button active"
+                    data-tab="assignments"
+                >
+                    Project assignments
+                </button>
+
+
+                <button
+                    type="button"
+                    class="quiet-button"
+                    data-tab="assign"
+                >
+                    Assign project
+                </button>
+
+
+                <button
+                    type="button"
+                    class="quiet-button"
+                    data-tab="phases"
+                >
+                    Phase assignments
+                </button>
+
+            </div>
+
+
+            <div
+                class="responsive-table employee-tab-panel"
+                data-tab-panel
+            >
+
+                <div class="employee-loading">
+                    Loading project assignments…
+                </div>
+
+            </div>
+
+        </section>
+
+    </div>
+
+</dialog>
+
+
+<!-- =========================================================
+     Create / Edit employee modal
+     ========================================================= -->
+
+<div
+    class="employee-create"
+    data-employee-create
+    hidden
+>
+
+    <form
+        data-employee-form
+        autocomplete="off"
+    >
+
+        <input
+            type="hidden"
+            name="employee_edit_id"
+            data-employee-edit-id
+        >
+
+
+        <div class="employee-create-head">
+
+            <div>
+
+                <p
+                    class="eyebrow"
+                    data-employee-form-eyebrow
+                >
+                    OPERATIONS
+                </p>
+
+                <h2 data-employee-form-title>
+                    New employee
+                </h2>
+
+            </div>
+
+
+            <button
+                type="button"
+                class="employee-close"
+                aria-label="Close"
+                data-employee-create-close
+            >
+                ×
+            </button>
+
+        </div>
+
+
+        <div class="employee-create-grid">
+
+            <label>
+
+                Name *
+
+                <input
+                    type="text"
+                    name="name"
+                    required
+                >
+
+            </label>
+
+
+            <label>
+
+                Employee number *
+
+                <input
+                    type="text"
+                    name="employee_number"
+                    required
+                >
+
+            </label>
+
+
+            <label>
+
+                Phone
+
+                <input
+                    type="text"
+                    name="phone"
+                >
+
+            </label>
+
+
+            <label>
+
+                Email
+
+                <input
+                    type="email"
+                    name="email"
+                >
+
+            </label>
+
+
+            <label>
+
+                Position
+
+                <input
+                    type="text"
+                    name="position"
+                    placeholder="e.g. Site Engineer"
+                >
+
+            </label>
+
+
+            <label>
+
+                Department
+
+                <input
+                    type="text"
+                    name="department"
+                    placeholder="e.g. Engineering"
+                >
+
+            </label>
+
+
+            <label>
+
+                Labor rate
+
+                <input
+                    type="number"
+                    name="labor_rate"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                >
+
+            </label>
+
+
+            <label>
+
+                Employment status
+
+                <select
+                    name="employment_status"
+                >
+
+                    <option value="ACTIVE">
+                        Active
+                    </option>
+
+                    <option value="ON_LEAVE">
+                        On leave
+                    </option>
+
+                    <option value="TERMINATED">
+                        Terminated
+                    </option>
+
+                </select>
+
+            </label>
+
+        </div>
+
+
+        <div class="employee-create-actions">
+
+            <button
+                type="button"
+                class="quiet-button"
+                data-employee-create-cancel
+            >
+                Cancel
+            </button>
+
+
+            <button
+                type="submit"
+                class="primary-button"
+                data-employee-form-submit
+            >
+                Create employee
+            </button>
+
+        </div>
+
+    </form>
+
+</div>
+
+{% endblock %}
+
+
+{% block page_js %}
+
+<!--
+    Cache-busting is intentional.
+
+    The previous employees.js contained prompt("Employee name"...)
+    and the browser was still loading that old version.
+-->
+<script src="{% static 'js/workforce.js' %}?v=20260906-2"></script>
+
+{% endblock %}
