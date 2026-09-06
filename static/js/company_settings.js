@@ -61,14 +61,23 @@
   initUsersPane();
 
   var taxesPane = document.querySelector('[data-settings-pane="taxes"]');
-  if (taxesPane) { initTaxesPane(); }
+  if (taxesPane) { try { initTaxesPane(); } catch (e) { console.error("taxes", e); } }
 
   var auditPane = document.querySelector('[data-settings-pane="audit"]');
-  if (auditPane) { initAuditPane(); }
+  if (auditPane) { try { initAuditPane(); } catch (e) { console.error("audit", e); } }
 
   var finPane = document.querySelector('[data-settings-pane="financial"]');
-  if (finPane) { initFinancialPane(); }
+  if (finPane) { try { initFinancialPane(); } catch (e) { console.error("financial", e); } }
+
+  var notifPane = document.querySelector('[data-settings-pane="notifications"]');
+  if (notifPane) { try { initNotificationsPane(); } catch (e) { console.error("notifications", e); } }
 })();
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
 
 function fancySelect(select) {
   "use strict";
@@ -638,12 +647,6 @@ function initFinancialPane() {
     return res.json();
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-
   function showBanner(text, type) {
     banner.textContent = text;
     banner.className = "users-banner" + (type ? " " + type : "");
@@ -927,6 +930,156 @@ function initFinancialPane() {
   });
 
   loadAccounts();
+}
+
+function initNotificationsPane() {
+  "use strict";
+  var API = "/api/notifications/preferences/";
+  var list = document.querySelector("[data-notif-prefs-list]");
+  var banner = document.querySelector("[data-notif-banner]");
+  var status = document.querySelector("[data-notif-status]");
+  var state = {};
+
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+
+  async function api(url, options) {
+    options = options || {};
+    var opts = {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options,
+    };
+    if (options.method && !["GET", "HEAD"].includes(options.method)) {
+      opts.headers["X-CSRFToken"] = getCookie("csrftoken");
+    }
+    var res = await fetch(url, opts);
+    if (!res.ok) {
+      var detail = res.statusText;
+      try { detail = JSON.stringify(await res.json()); } catch (e) { /* ignore */ }
+      throw new Error(detail || ("HTTP " + res.status));
+    }
+    if (res.status === 204) { return null; }
+    return res.json();
+  }
+
+  function showBanner(text, type) {
+    banner.textContent = text;
+    banner.className = "users-banner" + (type ? " " + type : "");
+    banner.hidden = false;
+    clearTimeout(banner._t);
+    banner._t = setTimeout(function () { banner.hidden = true; }, 5000);
+  }
+
+  var order = [
+    "OVERDUE_INVOICE", "PAYMENT_DUE", "LOW_INVENTORY",
+    "PO_AWAITING_APPROVAL", "BUDGET_OVERRUN", "DEADLINE_APPROACHING",
+  ];
+
+  function hasWindow(type) {
+    return type === "PAYMENT_DUE" || type === "DEADLINE_APPROACHING";
+  }
+
+  function render() {
+    list.innerHTML = order.map(function (type) {
+      var p = state[type] || {};
+      var label = p.label || type;
+      var role = p.role || "OWNER";
+      var desc = p.description || "";
+      var checked = p.is_enabled !== false;
+      var windowInput = hasWindow(type)
+        ? '<input type="number" class="notif-window" min="1" max="180" step="1" data-notif-type="'
+            + type + '" value="' + (p.window_days == null ? "" : p.window_days) + '" placeholder="—">'
+        : "";
+      return ''
+        + '<div class="notif-row" data-notif-type="' + type + '">'
+        +   '<div class="notif-row-main">'
+        +     '<div class="notif-row-title">'
+        +       '<strong>' + escapeHtml(label) + '</strong>'
+        +       '<span class="notif-role">' + role + '</span>'
+        +     '</div>'
+        +     '<p>' + escapeHtml(desc) + '</p>'
+        +   '</div>'
+        +   '<div class="notif-row-controls">'
+        +     (hasWindow(type)
+        ?       '<div class="notif-window-wrap"><label>' + escapeHtml(windowLabel(type)) + '</label>' + windowInput + '<em>days</em></div>'
+        :       '')
+        +     '<label class="fin-switch">'
+        +       '<input type="checkbox" data-notif-toggle data-notif-type="' + type + '"' + (checked ? ' checked' : '') + '>'
+        +       '<span class="fin-switch-track"><span class="fin-switch-thumb"></span></span>'
+        +     '</label>'
+        +   '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  function windowLabel(type) {
+    return type === "DEADLINE_APPROACHING" ? "Look ahead" : "Due soon";
+  }
+
+  function setStatus(saved) {
+    if (status) {
+      status.textContent = saved ? "Saved" : "Current settings";
+      status.classList.toggle("is-saved", !!saved);
+    }
+  }
+
+  function rowNode(type) {
+    return list.querySelector('[data-notif-type="' + type + '"]');
+  }
+
+  function patch(type) {
+    var row = rowNode(type);
+    if (!row) { return; }
+    var toggle = row.querySelector('[data-notif-toggle]');
+    var windowInput = row.querySelector(".notif-window");
+    var payload = {};
+    var prefs = { is_enabled: toggle.checked };
+    if (windowInput) {
+      var v = windowInput.value;
+      prefs.window_days = v === "" ? null : Math.max(1, parseInt(v, 10) || 1);
+    }
+    payload[type] = prefs;
+    api(API, { method: "PATCH", body: JSON.stringify(payload) })
+      .then(function () {
+        return load();
+      })
+      .then(function () {
+        setStatus(true);
+        showBanner(labelFor(type) + " updated.", "success");
+      })
+      .catch(function (err) {
+        load();
+        showBanner("Could not save: " + err.message, "error");
+      });
+  }
+
+  function labelFor(type) {
+    return (state[type] && state[type].label) || type;
+  }
+
+  list.addEventListener("change", function (ev) {
+    var toggle = ev.target.closest('[data-notif-toggle]');
+    if (toggle) { patch(toggle.getAttribute("data-notif-type")); return; }
+    var win = ev.target.closest(".notif-window");
+    if (win) { patch(win.getAttribute("data-notif-type")); }
+  });
+
+  async function load() {
+    try {
+      var data = await api(API);
+      state = data || {};
+      render();
+      return state;
+    } catch (err) {
+      list.innerHTML = '';
+      showBanner("Could not load notification preferences: " + err.message, "error");
+    }
+  }
+
+  load();
 }
 
 function initUsersPane() {

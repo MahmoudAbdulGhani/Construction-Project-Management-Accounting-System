@@ -304,3 +304,23 @@ select.users-filter:focus-visible{outline:none;border-color:#0b7367;box-shadow:0
 .fin-rule-footer .primary-button{margin:0}
 .fin-card-rules .users-banner{margin-top:8px}
 @media(max-width:640px){.fin-stats{grid-template-columns:1fr}}
+
+/* ---- Notifications pane (alert preferences) ---- */
+.notif-card{padding-bottom:4px}
+.notif-list{border-top:1px solid #e2eae7}
+.notif-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 22px;border-bottom:1px solid #eef2f0;flex-wrap:wrap}
+.notif-row-main{flex:1 1 300px;min-width:0}
+.notif-row-title{display:flex;align-items:center;gap:9px;margin-bottom:4px}
+.notif-row-title strong{font-size:11px;color:#18352b}
+.notif-role{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#0b7367;background:#e6f3ef;border:1px solid #cde7df;border-radius:999px;padding:2px 8px}
+.notif-row-main p{margin:0;font-size:9px;color:#647b75;line-height:1.5}
+.notif-row-controls{display:flex;align-items:center;gap:18px;flex-shrink:0}
+.notif-window-wrap{display:flex;align-items:center;gap:7px}
+.notif-window-wrap label{font-size:8px;font-weight:800;color:#647b75}
+.notif-window{border:1px solid #a5b8b3;border-radius:8px;background:#fff;padding:8px 10px;font-size:10px;font-family:inherit;color:var(--ink);box-sizing:border-box;width:74px;appearance:none;-webkit-appearance:none;-moz-appearance:none}
+.notif-window:focus{outline:0;border-color:#0b7367;box-shadow:0 0 0 3px #0b736718}
+.notif-window-wrap em{font-style:normal;font-size:9px;font-weight:800;color:#647b75}
+.notif-note{font-size:8px;color:#8aa29b;padding:12px 22px;line-height:1.6}
+.notif-note code{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;background:#eef3f1;border:1px solid #e2eae7;border-radius:4px;padding:1px 5px;color:#0b3347}
+.notif-card .users-banner{margin:0 22px 14px}
+@media(max-width:640px){.notif-row-controls{gap:12px}.notif-window-wrap{width:100%}}
