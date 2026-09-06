@@ -42,6 +42,13 @@ class ProjectListSerializer(serializers.ModelSerializer):
 
     manager = EmployeeSummarySerializer(read_only=True)
 
+    buyer_id = serializers.PrimaryKeyRelatedField(
+        source="buyer",
+        queryset=Client.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+
     class Meta:
         model = Project
         fields = [
@@ -55,6 +62,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
             "expected_completion_date",
             "is_archived",
             "manager",
+            "buyer_id",
         ]
 
 

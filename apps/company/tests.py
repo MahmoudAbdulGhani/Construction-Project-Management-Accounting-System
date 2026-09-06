@@ -10,8 +10,13 @@ Also covers the Company Profile API (/api/company/) which exposes
 read (GET) and update (PATCH) of the single company record, gated to the
 Owner role only.
 """
+import io
+import urllib.error
+from unittest import mock
+
 from django.contrib.auth.models import User as DjangoUser
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status as http
 from rest_framework.test import APIClient
@@ -20,6 +25,7 @@ from users.models import Role, User
 from users.testing import WithUsersTableMixin
 
 from .models import DEFAULT_CURRENCY_UUID, CompanyProfile
+from .storage import SupabaseStorageError, upload_logo
 from .testing import WithCompanyDetailsTableMixin
 
 
@@ -347,3 +353,92 @@ class CompanyApiStillOneRecordTests(CompanyApiTestBase):
         self.assertEqual(CompanyProfile.objects.count(), count_before)
         self.company.refresh_from_db()
         self.assertEqual(self.company.name, "Still Cedar")
+
+
+# ── Supabase Storage (logo upload) tests ─────────────────────────────────
+
+
+class SupabaseStorageTests(SimpleTestCase):
+    """Unit tests for ``storage.upload_logo`` with a mocked HTTP layer.
+
+    No network or database is touched: ``urllib.request.urlopen`` is
+    replaced, so these verify the request is shaped correctly (auth key
+    selection, target URL, headers) and that failures become
+    ``SupabaseStorageError`` for the settings page to display.
+    """
+
+    LOGO_SETTINGS = dict(
+        SUPABASE_URL="https://xyz.supabase.co",
+        SUPABASE_ANON_KEY="anon-key",
+        SUPABASE_SERVICE_ROLE_KEY="service-key",
+        SUPABASE_LOGO_BUCKET="logo",
+    )
+
+    @staticmethod
+    def _header(request, name):
+        for key, value in dict(getattr(request, "headers", {}) or {}).items():
+            if key.lower() == name.lower():
+                return value
+        return None
+
+    @staticmethod
+    def _fake_response(mock_urlopen):
+        fake = mock.MagicMock()
+        fake.status = 200
+        fake.read.return_value = b"{}"
+        mock_urlopen.return_value.__enter__.return_value = fake
+        return fake
+
+    def test_uses_service_role_key_when_configured(self):
+        with override_settings(**self.LOGO_SETTINGS):
+            file = SimpleUploadedFile("logo.png", b"png-bytes", content_type="image/png")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                self._fake_response(urlopen)
+                result = upload_logo(file)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer service-key")
+        self.assertEqual(self._header(request, "apikey"), "service-key")
+        self.assertEqual(self._header(request, "x-upsert"), "true")
+        self.assertEqual(self._header(request, "content-type"), "image/png")
+        self.assertEqual(
+            request.full_url.startswith("https://xyz.supabase.co/storage/v1/object/logo/logo-"),
+            True,
+        )
+        filename = request.full_url.rsplit("/", 1)[-1]
+        self.assertTrue(filename.startswith("logo-") and filename.endswith(".png"))
+        self.assertEqual(
+            result,
+            f"https://xyz.supabase.co/storage/v1/object/public/logo/{filename}",
+        )
+
+    def test_falls_back_to_anon_key_without_service_role(self):
+        settings_no_service = {**self.LOGO_SETTINGS, "SUPABASE_SERVICE_ROLE_KEY": ""}
+        with override_settings(**settings_no_service):
+            file = SimpleUploadedFile("logo.jpg", b"jpg-bytes", content_type="image/jpeg")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                self._fake_response(urlopen)
+                upload_logo(file)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer anon-key")
+        self.assertEqual(self._header(request, "apikey"), "anon-key")
+
+    def test_raises_storage_error_when_upload_rejected(self):
+        with override_settings(**self.LOGO_SETTINGS):
+            file = SimpleUploadedFile("logo.svg", b"<svg/>", content_type="image/svg+xml")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                urlopen.side_effect = urllib.error.HTTPError(
+                    "https://xyz.supabase.co/storage/v1/object/logo/logo-x.svg",
+                    403, "Forbidden", {},
+                    io.BytesIO(b'{"message":"AccessDenied"}'),
+                )
+                with self.assertRaises(SupabaseStorageError) as ctx:
+                    upload_logo(file)
+
+        self.assertIn("403", str(ctx.exception))
+
+    def test_raises_when_not_configured(self):
+        with override_settings(SUPABASE_URL="", SUPABASE_SERVICE_ROLE_KEY="", SUPABASE_ANON_KEY=""):
+            with self.assertRaises(SupabaseStorageError):
+                upload_logo(SimpleUploadedFile("logo.png", b"x", content_type="image/png"))

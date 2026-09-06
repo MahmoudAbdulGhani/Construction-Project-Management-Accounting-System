@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from construction.filtering import filter_date_range
+from contractors.serializers import ProjectContractorSerializer
 
 from .models import (
     Budget,
@@ -39,6 +40,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     /api/v1/projects/{id}/archive/         POST
     /api/v1/projects/{id}/unarchive/       POST
     /api/v1/projects/{id}/employees/       GET (list assignments), POST (assign)
+    /api/v1/projects/{id}/contractors/      GET (list contractor assignments)
     /api/v1/projects/{id}/release-employee/ POST  {"employee_id": "..."}
     /api/v1/projects/{id}/documents/       GET (linked documents)
     """
@@ -105,6 +107,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(project=project, assigned_at=request.data.get("assigned_at") or timezone.localdate())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="contractors")
+    def contractors(self, request, pk=None):
+        project = self.get_object()
+        qs = project.contractor_assignments.filter(
+            released_at__isnull=True
+        ).select_related("contractor")
+        return Response(ProjectContractorSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="release-employee")
     def release_employee(self, request, pk=None):

@@ -146,6 +146,25 @@ class ContractorAssignmentUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ProjectContractorSerializer(serializers.ModelSerializer):
+    """One row of ``project_contractors`` served from the project side,
+    with the contractor summarized inline (mirror of
+    ``ContractorProjectSerializer``)."""
+
+    contractor = ContractorListSerializer(read_only=True)
+
+    class Meta:
+        model = ContractorProjectAssignment
+        fields = [
+            "id",
+            "contractor",
+            "contract_amount",
+            "assigned_at",
+            "released_at",
+            "status",
+        ]
+
+
 class ContractorDocumentSerializer(serializers.ModelSerializer):
     """Read-only metadata for one contractor document."""
 
