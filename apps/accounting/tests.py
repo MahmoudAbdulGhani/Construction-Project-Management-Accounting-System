@@ -386,3 +386,76 @@ class ReportAPITests(AccountingTestBase):
         anon = APIClient()
         self.assertEqual(anon.get("/api/accounting/reports/profit-loss/").status_code, 401)
         self.assertEqual(anon.get("/api/accounting/reports/trend/").status_code, 401)
+
+
+class ChartOfAccountsApiTests(AccountingTestBase):
+    """Pin the ``/api/accounting/accounts/`` contract the Company settings
+    "Financial settings" tab is built against: flat listing with parent
+    info for the hierarchy display, search/filter, create, and status
+    toggle through the existing AccountViewSet (no backend changes made
+    for the tab -- the CRUD API already exists)."""
+
+    def setUp(self):
+        super().setUp()
+        api_user = DjangoUser.objects.create_user(username="finsettings", password="pass12345")
+        self.client = APIClient()
+        self.client.force_authenticate(user=api_user)
+        self.assets = Account.objects.create(code="1001", name="Assets", account_type="Asset")
+        self.cash = Account.objects.create(
+            code="1010", name="Cash & Bank", account_type="Asset", parent_account=self.assets
+        )
+
+    def test_list_exposes_the_fields_the_settings_tab_needs(self):
+        response = self.client.get("/api/accounting/accounts/")
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"]
+        row = next(r for r in rows if r["id"] == str(self.cash.id))
+        self.assertEqual(row["code"], "1010")
+        self.assertEqual(row["name"], "Cash & Bank")
+        self.assertEqual(row["account_type"], "Asset")
+        self.assertEqual(row["parent_account"], self.assets.id)
+        self.assertEqual(row["parent_account_code"], "1001")
+        self.assertTrue(row["is_active"])
+
+    def test_create_account_via_api(self):
+        response = self.client.post("/api/accounting/accounts/", {
+            "code": "2000", "name": "Accounts Payable", "account_type": "Liability",
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(pk=response.data["id"])
+        self.assertEqual(created.account_type, "Liability")
+        self.assertTrue(created.is_active)
+
+    def test_duplicate_code_is_rejected(self):
+        response = self.client.post("/api/accounting/accounts/", {
+            "code": "1001", "name": "Duplicate", "account_type": "Asset",
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_missing_required_fields_are_rejected(self):
+        response = self.client.post("/api/accounting/accounts/", {"code": "3000"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_status_toggle_via_patch(self):
+        response = self.client.patch(
+            f"/api/accounting/accounts/{self.cash.id}/", {"is_active": False}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_active"])
+        self.cash.refresh_from_db()
+        self.assertFalse(self.cash.is_active)
+
+    def test_is_active_filter(self):
+        self.cash.is_active = False
+        self.cash.save(update_fields=["is_active"])
+        response = self.client.get("/api/accounting/accounts/?is_active=false")
+        self.assertEqual(response.status_code, 200)
+        ids = [r["id"] for r in response.data["results"]]
+        self.assertIn(str(self.cash.id), ids)
+
+    def test_search_by_code_or_name(self):
+        response = self.client.get("/api/accounting/accounts/?search=cash")
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"]
+        self.assertTrue(any(str(r["id"]) == str(self.cash.id) for r in rows))
+        self.assertTrue(all(str(r["id"]) != str(self.assets.id) for r in rows))
