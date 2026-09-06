@@ -156,7 +156,7 @@
     let phases = [];
     let budgets = [];
     let changeOrders = [];
-
+    let projectEmployees = [];
     let budgetSummaries = new Map();
 
 
@@ -508,87 +508,102 @@
 
     function renderProjectTeam() {
 
-        const container =
-            $("[data-project-team]");
+      const container =
+          $("[data-project-team]");
 
-        if (!container) return;
-
-
-        const possibleMembers =
-            project?.team ||
-            project?.team_members ||
-            project?.members ||
-            [];
+      if (!container) return;
 
 
-        if (!Array.isArray(possibleMembers) ||
-            !possibleMembers.length) {
-
-            container.innerHTML = `
-                <div class="overview-empty">
-                    No team members available.
-                </div>
-            `;
-
-            return;
-        }
+      const members =
+          Array.isArray(projectEmployees)
+              ? projectEmployees.filter(
+                  assignment =>
+                      !assignment.released_at
+              )
+              : [];
 
 
-        container.innerHTML =
-            possibleMembers
-                .slice(0, 6)
-                .map(member => {
+      if (!members.length) {
 
-                    const name =
-                        member.name ||
-                        member.full_name ||
-                        member.employee_name ||
-                        "Team member";
+          container.innerHTML = `
+              <div class="overview-empty">
+                  No team members available.
+              </div>
+          `;
 
-
-                    const role =
-                        member.role ||
-                        member.position ||
-                        member.job_title ||
-                        "Team member";
+          return;
+      }
 
 
-                    const initials =
-                        name
-                            .split(/\s+/)
-                            .slice(0, 2)
-                            .map(part => part[0])
-                            .join("")
-                            .toUpperCase();
+      container.innerHTML =
+          members
+              .slice(0, 6)
+              .map(assignment => {
+
+                  const employee =
+                      assignment.employee || {};
 
 
-                    return `
-                        <div class="team-row">
+                  const employeeFirstName =
+                      employee.first_name || "";
 
-                            <div class="avatar">
-                                ${esc(initials)}
-                            </div>
-
-                            <div>
-                                <strong>
-                                    ${esc(name)}
-                                </strong>
-
-                                <span>
-                                    ${esc(role)}
-                                </span>
-                            </div>
-
-                            <i data-lucide="ellipsis"></i>
-
-                        </div>
-                    `;
-                })
-                .join("");
+                  const employeeLastName =
+                      employee.last_name || "";
 
 
-        refreshIcons();
-    }
+                  const name =
+                      assignment.employee_name ||
+                      employee.name ||
+                      employee.full_name ||
+                      `${employeeFirstName} ${employeeLastName}`.trim() ||
+                      "Team member";
+
+
+                  const role =
+                      assignment.role_on_project ||
+                      employee.position ||
+                      employee.job_title ||
+                      employee.role ||
+                      "Team member";
+
+
+                  const initials =
+                      name
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map(part => part[0])
+                          .join("")
+                          .toUpperCase();
+
+
+                  return `
+                      <div class="team-row">
+
+                          <div class="avatar">
+                              ${esc(initials || "?")}
+                          </div>
+
+                          <div>
+                              <strong>
+                                  ${esc(name)}
+                              </strong>
+
+                              <span>
+                                  ${esc(role)}
+                              </span>
+                          </div>
+
+                          <i data-lucide="ellipsis"></i>
+
+                      </div>
+                  `;
+              })
+              .join("");
+
+
+      refreshIcons();
+  }
 
 
     /* =========================================================
@@ -994,7 +1009,8 @@
             phaseData,
             ordersData,
             docs,
-            budgetData
+            budgetData,
+            employeesData
         ] = await Promise.all([
 
             request(
@@ -1015,6 +1031,9 @@
 
             request(
                 `budgets/?project=${id}`
+            ),
+            request(
+                `projects/${id}/employees/`
             )
         ]);
 
@@ -1026,6 +1045,8 @@
         budgets = result(budgetData);
 
         changeOrders = result(ordersData);
+
+        projectEmployees = result(employeesData);
 
 
         /* =====================================================
