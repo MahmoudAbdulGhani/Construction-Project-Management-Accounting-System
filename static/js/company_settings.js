@@ -64,6 +64,10 @@
   if (taxesPane) { try { initTaxesPane(); } catch (e) { console.error("taxes", e); } }
 
   var auditPane = document.querySelector('[data-settings-pane="audit"]');
+  if (auditPane) { initAuditPane(); }
+
+  var finPane = document.querySelector('[data-settings-pane="financial"]');
+  if (finPane) { initFinancialPane(); }
   if (auditPane) { try { initAuditPane(); } catch (e) { console.error("audit", e); } }
 
   var finPane = document.querySelector('[data-settings-pane="financial"]');
@@ -645,6 +649,12 @@ function initFinancialPane() {
     }
     if (res.status === 204) { return null; }
     return res.json();
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   function showBanner(text, type) {
