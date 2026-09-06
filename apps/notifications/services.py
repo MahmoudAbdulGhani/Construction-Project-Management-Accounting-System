@@ -28,11 +28,29 @@ from projects.models import Project, get_active_budget, get_budget_summary
 from purchasing.models import PurchaseOrder
 from users.models import Role, User
 
-from .models import Notification, NotificationType
+from .models import Notification, NotificationPreference, NotificationType
 
 # How many days ahead "payment due" / "deadline approaching" look.
 DUE_SOON_WINDOW_DAYS = 3
 DEADLINE_WINDOW_DAYS = 7
+
+
+def _pref_enabled(notification_type):
+    """Whether an alert type is enabled. A missing row means enabled (True)."""
+    return NotificationPreference.objects.filter(
+        notification_type=notification_type, is_enabled=True
+    ).exists() or not NotificationPreference.objects.filter(
+        notification_type=notification_type
+    ).exists()
+
+
+def _pref_window(notification_type, default_days):
+    """Look-ahead window for a type, falling back to ``default_days`` when
+    no row or no override exists."""
+    row = NotificationPreference.objects.filter(notification_type=notification_type).first()
+    if row is not None and row.window_days is not None:
+        return row.window_days
+    return default_days
 
 # Invoice statuses that are still owed money -- BRD 5.23/5.24's
 # "outstanding" set. DRAFT is excluded: it hasn't been sent, so it
@@ -84,6 +102,8 @@ def _invoice_alerts(notification_type, title_fmt, message_fmt, invoice_querysets
 
 def overdue_invoice_alerts(today=None):
     """BRD 9 "Overdue invoices": due_date has passed and it's still outstanding."""
+    if not _pref_enabled(NotificationType.OVERDUE_INVOICE):
+        return []
     today = today or timezone.now().date()
     client_qs = ClientInvoice.objects.filter(due_date__lt=today, status__in=_OUTSTANDING_INVOICE_STATUSES)
     supplier_qs = SupplierInvoice.objects.filter(due_date__lt=today, status__in=_OUTSTANDING_INVOICE_STATUSES)
@@ -97,7 +117,10 @@ def overdue_invoice_alerts(today=None):
 
 def payment_due_alerts(today=None, window_days=DUE_SOON_WINDOW_DAYS):
     """BRD 9 "Payment due": due soon, not yet overdue."""
+    if not _pref_enabled(NotificationType.PAYMENT_DUE):
+        return []
     today = today or timezone.now().date()
+    window_days = _pref_window(NotificationType.PAYMENT_DUE, window_days)
     horizon = today + timedelta(days=window_days)
     client_qs = ClientInvoice.objects.filter(due_date__gte=today, due_date__lte=horizon, status__in=_OUTSTANDING_INVOICE_STATUSES)
     supplier_qs = SupplierInvoice.objects.filter(due_date__gte=today, due_date__lte=horizon, status__in=_OUTSTANDING_INVOICE_STATUSES)
@@ -111,6 +134,8 @@ def payment_due_alerts(today=None, window_days=DUE_SOON_WINDOW_DAYS):
 
 def low_inventory_alerts():
     """BRD 9 "Low inventory" -- same condition as inventory.views.StockViewSet.low_stock (CPMAS-29)."""
+    if not _pref_enabled(NotificationType.LOW_INVENTORY):
+        return []
     created = []
     owners = list(_recipients(Role.OWNER))
     low_stocks = Stock.objects.filter(quantity__lt=F('material__minimum_stock_level')).select_related('material', 'warehouse')
@@ -130,6 +155,8 @@ def low_inventory_alerts():
 
 def po_awaiting_approval_alerts():
     """BRD 9 "PO/Change order awaiting approval" -- the PO half; Change Orders aren't built yet in this codebase."""
+    if not _pref_enabled(NotificationType.PO_AWAITING_APPROVAL):
+        return []
     created = []
     owners = list(_recipients(Role.OWNER))
     submitted = PurchaseOrder.objects.filter(status=PurchaseOrder.Status.SUBMITTED)
@@ -148,6 +175,8 @@ def po_awaiting_approval_alerts():
 
 def budget_overrun_alerts():
     """BRD 9 "Budget overruns" -- reuses CPMAS-47's get_budget_summary; overrun = actual > budgeted, project-wide."""
+    if not _pref_enabled(NotificationType.BUDGET_OVERRUN):
+        return []
     created = []
     owners = list(_recipients(Role.OWNER))
     for project in Project.objects.filter(status=Project.STATUS_ACTIVE):
@@ -172,7 +201,10 @@ def budget_overrun_alerts():
 
 def deadline_approaching_alerts(today=None, window_days=DEADLINE_WINDOW_DAYS):
     """BRD 9 "Deadline approaches" -- an active project's expected completion date is coming up."""
+    if not _pref_enabled(NotificationType.DEADLINE_APPROACHING):
+        return []
     today = today or timezone.now().date()
+    window_days = _pref_window(NotificationType.DEADLINE_APPROACHING, window_days)
     horizon = today + timedelta(days=window_days)
     created = []
     owners = list(_recipients(Role.OWNER))

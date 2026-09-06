@@ -10,6 +10,8 @@ Also covers the Company Profile API (/api/company/) which exposes
 read (GET) and update (PATCH) of the single company record, gated to the
 Owner role only.
 """
+from datetime import date
+from decimal import Decimal
 import io
 import urllib.error
 from unittest import mock
@@ -21,15 +23,16 @@ from django.urls import reverse
 from rest_framework import status as http
 from rest_framework.test import APIClient
 
+from taxes.models import TaxRate
 from users.models import Role, User
 from users.testing import WithUsersTableMixin
 
+from .models import DEFAULT_CURRENCY_UUID, CompanyProfile, FinancialSettings
 from .models import DEFAULT_CURRENCY_UUID, CompanyProfile
 from .storage import SupabaseStorageError, upload_logo
 from .testing import WithCompanyDetailsTableMixin
 
 
-# ── Server-rendered page tests (existing) ────────────────────────────────
 
 
 class CompanySettingsPageTests(WithCompanyDetailsTableMixin, TestCase):
@@ -355,6 +358,186 @@ class CompanyApiStillOneRecordTests(CompanyApiTestBase):
         self.assertEqual(self.company.name, "Still Cedar")
 
 
+# ── Financial Settings API tests ─────────────────────────────────────────
+
+
+class FinancialSettingsApiTestBase(CompanyApiTestBase):
+    """Shared setup for Financial Settings API tests: a tax rate + URL."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.tax = TaxRate.objects.create(
+            name="VAT",
+            rate=Decimal("11.0000"),
+            tax_type="VAT",
+            effective_date=date(2024, 1, 1),
+        )
+        cls.rules_url = "/api/company/financial-settings/"
+
+
+class FinancialSettingsApiUnauthenticatedTests(FinancialSettingsApiTestBase):
+    """Anonymous callers must not read or write financial rules."""
+
+    def test_get_returns_401(self):
+        resp = self.client.get(self.rules_url)
+        self.assertEqual(resp.status_code, http.HTTP_401_UNAUTHORIZED)
+
+    def test_patch_returns_401(self):
+        resp = self.client.patch(
+            self.rules_url, {"retention_percent": "10.00"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_401_UNAUTHORIZED)
+
+
+class FinancialSettingsApiAccountantTests(FinancialSettingsApiTestBase):
+    """Accountant role must not access financial rules."""
+
+    def setUp(self):
+        super().setUp()
+        self.login_accountant()
+
+    def test_get_returns_403(self):
+        resp = self.client.get(self.rules_url)
+        self.assertEqual(resp.status_code, http.HTTP_403_FORBIDDEN)
+
+    def test_patch_returns_403(self):
+        resp = self.client.patch(
+            self.rules_url, {"retention_percent": "10.00"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_403_FORBIDDEN)
+
+
+class FinancialSettingsApiOwnerTests(FinancialSettingsApiTestBase):
+    """Owner can read and update the single financial rules record."""
+
+    def setUp(self):
+        super().setUp()
+        self.login_owner()
+
+    def test_get_returns_defaults(self):
+        resp = self.client.get(self.rules_url)
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        data = resp.data
+        self.assertEqual(data["fiscal_year_start_month"], 1)
+        self.assertEqual(data["fiscal_year_start_day"], 1)
+        self.assertTrue(data["lock_financial_periods"])
+        self.assertEqual(data["period_lock_after_days"], 30)
+        self.assertIsNone(data["default_tax_rate"])
+        self.assertEqual(data["default_tax_rate_label"], "")
+        self.assertEqual(data["default_payment_terms"], "NET30")
+        self.assertEqual(data["retention_percent"], "5.00")
+        self.assertEqual(data["budget_alert_percent"], "90.00")
+
+    def test_get_creates_singleton_row(self):
+        self.assertEqual(FinancialSettings.objects.count(), 0)
+        resp = self.client.get(self.rules_url)
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        self.assertEqual(FinancialSettings.objects.count(), 1)
+
+    def test_patch_updates_fields(self):
+        resp = self.client.patch(
+            self.rules_url,
+            {
+                "fiscal_year_start_month": 3,
+                "fiscal_year_start_day": 15,
+                "lock_financial_periods": False,
+                "period_lock_after_days": 0,
+                "default_tax_rate": str(self.tax.id),
+                "default_payment_terms": "NET60",
+                "retention_percent": "10.00",
+                "budget_alert_percent": "85.00",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        rules = FinancialSettings.objects.get()
+        self.assertEqual(rules.fiscal_year_start_month, 3)
+        self.assertEqual(rules.fiscal_year_start_day, 15)
+        self.assertFalse(rules.lock_financial_periods)
+        self.assertEqual(rules.period_lock_after_days, 0)
+        self.assertEqual(rules.default_tax_rate_id, self.tax.id)
+        self.assertEqual(rules.default_payment_terms, "NET60")
+        self.assertEqual(rules.retention_percent, Decimal("10.00"))
+        self.assertEqual(rules.budget_alert_percent, Decimal("85.00"))
+
+    def test_patch_partial_keeps_other_fields(self):
+        resp = self.client.patch(
+            self.rules_url, {"retention_percent": "12.00"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        rules = FinancialSettings.objects.get()
+        self.assertEqual(rules.retention_percent, Decimal("12.00"))
+        self.assertEqual(rules.budget_alert_percent, Decimal("90.00"))
+        self.assertTrue(rules.lock_financial_periods)
+        self.assertEqual(FinancialSettings.objects.count(), 1)
+
+    def test_patch_and_get_never_create_second_row(self):
+        self.client.get(self.rules_url)
+        self.client.patch(
+            self.rules_url, {"retention_percent": "10.00"}, format="json",
+        )
+        self.client.get(self.rules_url)
+        self.assertEqual(FinancialSettings.objects.count(), 1)
+
+    def test_patch_returns_tax_label(self):
+        resp = self.client.patch(
+            self.rules_url, {"default_tax_rate": str(self.tax.id)}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        self.assertEqual(resp.data["default_tax_rate_label"], "VAT")
+        get_resp = self.client.get(self.rules_url)
+        self.assertEqual(get_resp.data["default_tax_rate_label"], "VAT")
+
+    def test_patch_clears_tax_rate(self):
+        self.client.patch(
+            self.rules_url, {"default_tax_rate": str(self.tax.id)}, format="json",
+        )
+        resp = self.client.patch(
+            self.rules_url, {"default_tax_rate": None}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        rules = FinancialSettings.objects.get()
+        self.assertIsNone(rules.default_tax_rate)
+
+    def test_invalid_month_rejected(self):
+        resp = self.client.patch(
+            self.rules_url, {"fiscal_year_start_month": 13}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_invalid_day_rejected(self):
+        resp = self.client.patch(
+            self.rules_url, {"fiscal_year_start_day": 0}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_retention_out_of_range_rejected(self):
+        resp = self.client.patch(
+            self.rules_url, {"retention_percent": "120.00"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_budget_alert_out_of_range_rejected(self):
+        resp = self.client.patch(
+            self.rules_url, {"budget_alert_percent": "-5.00"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_negative_lock_days_rejected(self):
+        resp = self.client.patch(
+            self.rules_url, {"period_lock_after_days": -1}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_400_BAD_REQUEST)
+
+    def test_patch_updates_updated_at(self):
+        self.client.get(self.rules_url)
+        old_updated = FinancialSettings.objects.get().updated_at
+        resp = self.client.patch(
+            self.rules_url, {"retention_percent": "8.50"}, format="json",
+        )
+        self.assertEqual(resp.status_code, http.HTTP_200_OK)
+        self.assertGreaterEqual(FinancialSettings.objects.get().updated_at, old_updated)
 # ── Supabase Storage (logo upload) tests ─────────────────────────────────
 
 

@@ -61,11 +61,23 @@
   initUsersPane();
 
   var taxesPane = document.querySelector('[data-settings-pane="taxes"]');
-  if (taxesPane) { initTaxesPane(); }
+  if (taxesPane) { try { initTaxesPane(); } catch (e) { console.error("taxes", e); } }
 
   var auditPane = document.querySelector('[data-settings-pane="audit"]');
-  if (auditPane) { initAuditPane(); }
+  if (auditPane) { try { initAuditPane(); } catch (e) { console.error("audit", e); } }
+
+  var finPane = document.querySelector('[data-settings-pane="financial"]');
+  if (finPane) { try { initFinancialPane(); } catch (e) { console.error("financial", e); } }
+
+  var notifPane = document.querySelector('[data-settings-pane="notifications"]');
+  if (notifPane) { try { initNotificationsPane(); } catch (e) { console.error("notifications", e); } }
 })();
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
 
 function fancySelect(select) {
   "use strict";
@@ -575,6 +587,499 @@ function initTaxesPane() {
   });
 
   loadRates();
+}
+
+function initFinancialPane() {
+  "use strict";
+  var API = "/api/accounting/accounts/";
+  var RULES_API = "/api/company/financial-settings/";
+  var TAXES_API = "/api/taxes/tax-rates/?page_size=100";
+  var state = { accounts: [], query: "" };
+
+  var el = function (sel, root) { return (root || document).querySelector(sel); };
+
+  var banner = el("[data-fin-banner]");
+  var body = el("[data-fin-body]");
+  var empty = el("[data-fin-empty]");
+  var loading = el("[data-fin-loading]");
+  var count = el("[data-fin-count]");
+  var search = el("[data-fin-search]");
+  var modal = el("[data-fin-modal]");
+  var form = el("[data-fin-form]");
+  var modalTitle = el("[data-fin-modal-title]");
+  var parentSelect = form.elements["parent_account"];
+  var statusSelect = fancySelect(form.elements["is_active"]);
+  var parentAccountSelect = fancySelect(parentSelect);
+
+  var statTotal = el("[data-fin-stat-total]");
+  var statActive = el("[data-fin-stat-active]");
+  var statInactive = el("[data-fin-stat-inactive]");
+
+  var rulesForm = el("[data-fin-rules-form]");
+  var rulesBanner = el("[data-fin-rules-banner]");
+  var rulesStatus = el("[data-fin-rules-status]");
+  var rulesField = function (name) {
+    return rulesForm ? rulesForm.elements[name] : null;
+  };
+
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+
+  async function api(url, options) {
+    options = options || {};
+    var opts = {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options,
+    };
+    if (options.method && !["GET", "HEAD"].includes(options.method)) {
+      opts.headers["X-CSRFToken"] = getCookie("csrftoken");
+    }
+    var res = await fetch(url, opts);
+    if (!res.ok) {
+      var detail = res.statusText;
+      try { detail = JSON.stringify(await res.json()); } catch (e) { /* ignore */ }
+      throw new Error(detail || ("HTTP " + res.status));
+    }
+    if (res.status === 204) { return null; }
+    return res.json();
+  }
+
+  function showBanner(text, type) {
+    banner.textContent = text;
+    banner.className = "users-banner" + (type ? " " + type : "");
+    banner.hidden = false;
+    clearTimeout(banner._t);
+    banner._t = setTimeout(function () { banner.hidden = true; }, 5000);
+  }
+
+  function hideBanner() { banner.hidden = true; }
+
+  function statusWord(isActive) {
+    return isActive ? "active" : "inactive";
+  }
+
+  function typeClass(type) {
+    var t = String(type || "").toLowerCase();
+    var map = {
+      asset: "t-asset", revenue: "t-revenue",
+      liability: "t-liability", equity: "t-equity", expense: "t-expense",
+    };
+    return map[t] || "t-other";
+  }
+
+  function buildParentOptions(excludeId) {
+    parentSelect.innerHTML =
+        '<option value="">— None —</option>'
+      + state.accounts
+          .filter(function (a) { return a.id !== excludeId; })
+          .sort(function (a, b) { return String(a.code).localeCompare(String(b.code), undefined, { numeric: true }); })
+          .map(function (a) {
+            return '<option value="' + a.id + '">' + escapeHtml(a.code + " — " + a.name) + '</option>';
+          })
+          .join("");
+    parentAccountSelect.sync();
+  }
+
+  function render() {
+    var q = state.query.toLowerCase().trim();
+    var list = state.accounts.filter(function (a) {
+      if (!q) { return true; }
+      return (a.code || "").toLowerCase().indexOf(q) !== -1
+        || (a.name || "").toLowerCase().indexOf(q) !== -1
+        || (a.account_type || "").toLowerCase().indexOf(q) !== -1;
+    });
+
+    count.textContent = list.length + " of " + state.accounts.length + " accounts";
+    empty.classList.toggle("visible", list.length === 0);
+    loading.style.display = "none";
+
+    var activeCount = state.accounts.filter(function (a) { return a.is_active; }).length;
+    if (statTotal) { statTotal.textContent = state.accounts.length; }
+    if (statActive) { statActive.textContent = activeCount; }
+    if (statInactive) { statInactive.textContent = state.accounts.length - activeCount; }
+
+    body.innerHTML = list.map(function (a) {
+      return ''
+        + '<tr data-id="' + a.id + '">'
+        +   '<td class="fin-code">' + escapeHtml(a.code) + '</td>'
+        +   '<td><span class="users-name">' + escapeHtml(a.name) + '</span></td>'
+        +   '<td><span class="fin-type-pill ' + typeClass(a.account_type) + '">' + escapeHtml(a.account_type || "—") + '</span></td>'
+        +   '<td><span class="users-status ' + statusWord(a.is_active) + '"><i class="users-dot" aria-hidden="true"></i>' + (a.is_active ? "Active" : "Inactive") + '</span></td>'
+        +   '<td class="users-actions">'
+        +     (a.is_active
+        ? '<button type="button" class="users-link" data-fin-act="deactivate" data-id="' + a.id + '">Deactivate</button>'
+        : '<button type="button" class="users-link" data-fin-act="activate" data-id="' + a.id + '">Activate</button>')
+        +     '<button type="button" class="users-link" data-fin-act="edit" data-id="' + a.id + '">Edit</button>'
+        +   '</td>'
+        + '</tr>';
+    }).join("");
+  }
+
+  async function loadAccounts() {
+    loading.style.display = "block";
+    try {
+      var data = await api(API + "?page_size=100");
+      state.accounts = data.results || data;
+      render();
+    } catch (err) {
+      loading.style.display = "none";
+      body.innerHTML = "";
+      empty.classList.remove("visible");
+      showBanner("Could not load the chart of accounts: " + err.message, "error");
+    }
+  }
+
+  function showModal() {
+    document.body.appendChild(modal);
+    modal.hidden = false;
+  }
+
+  function openAdd() {
+    modalTitle.textContent = "Add account";
+    form.reset();
+    form.elements["id"].value = "";
+    form.elements["is_active"].value = "true";
+    el("[data-fin-save]").textContent = "Create account";
+    buildParentOptions("");
+    statusSelect.sync();
+    showModal();
+    form.elements["code"].focus();
+  }
+
+  function openEdit(account) {
+    modalTitle.textContent = "Edit account";
+    form.reset();
+    form.elements["id"].value = account.id;
+    form.elements["code"].value = account.code || "";
+    form.elements["name"].value = account.name || "";
+    form.elements["account_type"].value = account.account_type || "";
+    form.elements["is_active"].value = account.is_active ? "true" : "false";
+    el("[data-fin-save]").textContent = "Save changes";
+    buildParentOptions(account.id);
+    parentAccountSelect.setValue(account.parent_account || "");
+    statusSelect.sync();
+    showModal();
+  }
+
+  function closeModal() { modal.hidden = true; }
+
+  async function submitForm(ev) {
+    ev.preventDefault();
+    hideBanner();
+
+    var id = form.elements["id"].value;
+    var payload = {
+      code: form.elements["code"].value.trim(),
+      name: form.elements["name"].value.trim(),
+      account_type: form.elements["account_type"].value.trim(),
+      parent_account: form.elements["parent_account"].value || null,
+      is_active: form.elements["is_active"].value === "true",
+    };
+
+    try {
+      if (id) {
+        await api(API + id + "/", { method: "PATCH", body: JSON.stringify(payload) });
+        showBanner("Account updated.", "success");
+      } else {
+        await api(API, { method: "POST", body: JSON.stringify(payload) });
+        showBanner("Account created.", "success");
+      }
+      closeModal();
+      loadAccounts();
+    } catch (err) {
+      showBanner("Could not save account: " + err.message, "error");
+    }
+  }
+
+  async function toggleStatus(id, activate) {
+    hideBanner();
+    try {
+      await api(API + id + "/", { method: "PATCH", body: JSON.stringify({ is_active: activate }) });
+      showBanner(activate ? "Account activated." : "Account deactivated.", "success");
+      loadAccounts();
+    } catch (err) {
+      showBanner("Could not change status: " + err.message, "error");
+    }
+  }
+
+  function showRulesBanner(text, type) {
+    rulesBanner.textContent = text;
+    rulesBanner.className = "users-banner" + (type ? " " + type : "");
+    rulesBanner.hidden = false;
+    clearTimeout(rulesBanner._t);
+    rulesBanner._t = setTimeout(function () { rulesBanner.hidden = true; }, 5000);
+  }
+
+  function setRulesField(name, value) {
+    var field = rulesField(name);
+    if (!field) { return; }
+    if (field.type === "checkbox") { field.checked = !!value; }
+    else { field.value = value == null ? "" : String(value); }
+  }
+
+  function populateTaxRateSelect(rates) {
+    var select = rulesField("default_tax_rate");
+    if (!select) { return; }
+    var options = '<option value="">— No default —</option>';
+    (rates || []).forEach(function (r) {
+      options += '<option value="' + r.id + '">'
+        + escapeHtml(r.name + " (" + r.rate + "%)")
+        + '</option>';
+    });
+    select.innerHTML = options;
+  }
+
+  async function loadRules() {
+    if (!rulesForm) { return; }
+    try {
+      var data = await api(RULES_API);
+      var rates = [];
+      try {
+        var taxes = await api(TAXES_API);
+        rates = taxes.results || taxes;
+      } catch (taxErr) { /* tax dropdown is optional */ }
+      populateTaxRateSelect(rates);
+      setRulesField("fiscal_year_start_month", data.fiscal_year_start_month);
+      setRulesField("fiscal_year_start_day", data.fiscal_year_start_day);
+      setRulesField("lock_financial_periods", data.lock_financial_periods);
+      setRulesField("period_lock_after_days", data.period_lock_after_days);
+      setRulesField("default_tax_rate", data.default_tax_rate || "");
+      setRulesField("default_payment_terms", data.default_payment_terms);
+      setRulesField("retention_percent", data.retention_percent);
+      setRulesField("budget_alert_percent", data.budget_alert_percent);
+      if (rulesStatus) {
+        rulesStatus.textContent = "Defaults synced";
+        rulesStatus.classList.remove("is-saved");
+      }
+    } catch (err) {
+      showRulesBanner("Could not load financial rules: " + err.message, "error");
+    }
+  }
+
+  async function saveRules(ev) {
+    ev.preventDefault();
+    rulesBanner.hidden = true;
+    var days = rulesField("period_lock_after_days").value;
+    var payload = {
+      fiscal_year_start_month: parseInt(rulesField("fiscal_year_start_month").value, 10),
+      fiscal_year_start_day: parseInt(rulesField("fiscal_year_start_day").value, 10),
+      lock_financial_periods: rulesField("lock_financial_periods").checked,
+      period_lock_after_days: days === "" ? null : parseInt(days, 10),
+      default_tax_rate: rulesField("default_tax_rate").value || null,
+      default_payment_terms: rulesField("default_payment_terms").value,
+      retention_percent: rulesField("retention_percent").value,
+      budget_alert_percent: rulesField("budget_alert_percent").value,
+    };
+    try {
+      var saved = await api(RULES_API, { method: "PATCH", body: JSON.stringify(payload) });
+      showRulesBanner("Financial rules saved.", "success");
+      if (rulesStatus) {
+        rulesStatus.textContent = "Saved";
+        rulesStatus.classList.add("is-saved");
+      }
+      loadRules();
+    } catch (err) {
+      showRulesBanner("Could not save financial rules: " + err.message, "error");
+    }
+  }
+
+  body.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-fin-act]");
+    if (!btn) { return; }
+    var act = btn.getAttribute("data-fin-act");
+    var id = btn.getAttribute("data-id");
+    var account = state.accounts.find(function (a) { return a.id === id; });
+    if (act === "deactivate") { toggleStatus(id, false); }
+    else if (act === "activate") { toggleStatus(id, true); }
+    else if (act === "edit" && account) { openEdit(account); }
+  });
+
+  search.addEventListener("input", function () {
+    state.query = this.value.trim();
+    render();
+  });
+
+  el("[data-fin-open-add]").addEventListener("click", openAdd);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-fin-modal-close]"), function (b) {
+    b.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", function (ev) { if (ev.target === modal) { closeModal(); } });
+  form.addEventListener("submit", submitForm);
+  if (rulesForm) {
+    rulesForm.addEventListener("submit", saveRules);
+    loadRules();
+  }
+
+  var subTabs = document.querySelectorAll("[data-fin-subtab]");
+  var subSections = document.querySelectorAll("[data-fin-section]");
+  function activateSubTab(name) {
+    subTabs.forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-fin-subtab") === name);
+    });
+    subSections.forEach(function (s) {
+      s.hidden = s.getAttribute("data-fin-section") !== name;
+    });
+  }
+  subTabs.forEach(function (b) {
+    b.addEventListener("click", function () {
+      activateSubTab(b.getAttribute("data-fin-subtab"));
+    });
+  });
+
+  loadAccounts();
+}
+
+function initNotificationsPane() {
+  "use strict";
+  var API = "/api/notifications/preferences/";
+  var list = document.querySelector("[data-notif-prefs-list]");
+  var banner = document.querySelector("[data-notif-banner]");
+  var status = document.querySelector("[data-notif-status]");
+  var state = {};
+
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+
+  async function api(url, options) {
+    options = options || {};
+    var opts = {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options,
+    };
+    if (options.method && !["GET", "HEAD"].includes(options.method)) {
+      opts.headers["X-CSRFToken"] = getCookie("csrftoken");
+    }
+    var res = await fetch(url, opts);
+    if (!res.ok) {
+      var detail = res.statusText;
+      try { detail = JSON.stringify(await res.json()); } catch (e) { /* ignore */ }
+      throw new Error(detail || ("HTTP " + res.status));
+    }
+    if (res.status === 204) { return null; }
+    return res.json();
+  }
+
+  function showBanner(text, type) {
+    banner.textContent = text;
+    banner.className = "users-banner" + (type ? " " + type : "");
+    banner.hidden = false;
+    clearTimeout(banner._t);
+    banner._t = setTimeout(function () { banner.hidden = true; }, 5000);
+  }
+
+  var order = [
+    "OVERDUE_INVOICE", "PAYMENT_DUE", "LOW_INVENTORY",
+    "PO_AWAITING_APPROVAL", "BUDGET_OVERRUN", "DEADLINE_APPROACHING",
+  ];
+
+  function hasWindow(type) {
+    return type === "PAYMENT_DUE" || type === "DEADLINE_APPROACHING";
+  }
+
+  function render() {
+    list.innerHTML = order.map(function (type) {
+      var p = state[type] || {};
+      var label = p.label || type;
+      var role = p.role || "OWNER";
+      var desc = p.description || "";
+      var checked = p.is_enabled !== false;
+      var windowInput = hasWindow(type)
+        ? '<input type="number" class="notif-window" min="1" max="180" step="1" data-notif-type="'
+            + type + '" value="' + (p.window_days == null ? "" : p.window_days) + '" placeholder="—">'
+        : "";
+      return ''
+        + '<div class="notif-row" data-notif-type="' + type + '">'
+        +   '<div class="notif-row-main">'
+        +     '<div class="notif-row-title">'
+        +       '<strong>' + escapeHtml(label) + '</strong>'
+        +       '<span class="notif-role">' + role + '</span>'
+        +     '</div>'
+        +     '<p>' + escapeHtml(desc) + '</p>'
+        +   '</div>'
+        +   '<div class="notif-row-controls">'
+        +     (hasWindow(type)
+        ?       '<div class="notif-window-wrap"><label>' + escapeHtml(windowLabel(type)) + '</label>' + windowInput + '<em>days</em></div>'
+        :       '')
+        +     '<label class="fin-switch">'
+        +       '<input type="checkbox" data-notif-toggle data-notif-type="' + type + '"' + (checked ? ' checked' : '') + '>'
+        +       '<span class="fin-switch-track"><span class="fin-switch-thumb"></span></span>'
+        +     '</label>'
+        +   '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  function windowLabel(type) {
+    return type === "DEADLINE_APPROACHING" ? "Look ahead" : "Due soon";
+  }
+
+  function setStatus(saved) {
+    if (status) {
+      status.textContent = saved ? "Saved" : "Current settings";
+      status.classList.toggle("is-saved", !!saved);
+    }
+  }
+
+  function rowNode(type) {
+    return list.querySelector('[data-notif-type="' + type + '"]');
+  }
+
+  function patch(type) {
+    var row = rowNode(type);
+    if (!row) { return; }
+    var toggle = row.querySelector('[data-notif-toggle]');
+    var windowInput = row.querySelector(".notif-window");
+    var payload = {};
+    var prefs = { is_enabled: toggle.checked };
+    if (windowInput) {
+      var v = windowInput.value;
+      prefs.window_days = v === "" ? null : Math.max(1, parseInt(v, 10) || 1);
+    }
+    payload[type] = prefs;
+    api(API, { method: "PATCH", body: JSON.stringify(payload) })
+      .then(function () {
+        return load();
+      })
+      .then(function () {
+        setStatus(true);
+        showBanner(labelFor(type) + " updated.", "success");
+      })
+      .catch(function (err) {
+        load();
+        showBanner("Could not save: " + err.message, "error");
+      });
+  }
+
+  function labelFor(type) {
+    return (state[type] && state[type].label) || type;
+  }
+
+  list.addEventListener("change", function (ev) {
+    var toggle = ev.target.closest('[data-notif-toggle]');
+    if (toggle) { patch(toggle.getAttribute("data-notif-type")); return; }
+    var win = ev.target.closest(".notif-window");
+    if (win) { patch(win.getAttribute("data-notif-type")); }
+  });
+
+  async function load() {
+    try {
+      var data = await api(API);
+      state = data || {};
+      render();
+      return state;
+    } catch (err) {
+      list.innerHTML = '';
+      showBanner("Could not load notification preferences: " + err.message, "error");
+    }
+  }
+
+  load();
 }
 
 function initUsersPane() {

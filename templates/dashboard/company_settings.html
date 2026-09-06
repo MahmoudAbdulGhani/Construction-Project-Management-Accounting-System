@@ -9,7 +9,6 @@
     <h1>Company settings</h1>
     <p>Configure company identity, access, accounting rules, taxes, and notifications.</p>
   </div>
-  <button class="primary-button" type="submit" form="company-settings-form" data-save-top>Save changes</button>
 </section>
 
 {% if saved %}<div class="settings-banner">✓ Company profile saved.</div>{% endif %}
@@ -149,8 +148,224 @@
   </div>
 
   <div class="settings-pane" data-settings-pane="financial">
-    <div class="settings-pane-head"><div><h2>Financial settings</h2><p>Accounting rules and system defaults</p></div></div>
-    <div class="settings-placeholder">Financial settings are ready to connect — fiscal-year rules, chart of accounts defaults, and posting policies for the accounting module.</div>
+    <div class="settings-pane-head">
+      <div><h2>Financial settings</h2><p>Chart of accounts and accounting defaults</p></div>
+    </div>
+
+    <div class="fin-subtabs" role="tablist">
+      <button type="button" role="tab" class="active" data-fin-subtab="accounts">Chart of accounts</button>
+      <button type="button" role="tab" data-fin-subtab="rules">Financial rules</button>
+    </div>
+
+    <div class="fin-section" data-fin-section="accounts">
+    <div class="fin-card fin-card-accounts">
+      <div class="fin-card-head">
+        <div class="fin-card-title">
+          <span class="fin-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h2m2 0h2m-4 4h2m2 0h2"/></svg></span>
+          <div><h3>Chart of accounts</h3><p>General ledger accounts used by the accounting module</p></div>
+        </div>
+        <button type="button" class="fin-add-btn" data-fin-open-add>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Add account
+        </button>
+      </div>
+
+      <div class="fin-stats">
+        <div class="fin-stat"><span>Total accounts</span><strong data-fin-stat-total>0</strong></div>
+        <div class="fin-stat"><span>Active</span><strong data-fin-stat-active>0</strong></div>
+        <div class="fin-stat"><span>Inactive</span><strong data-fin-stat-inactive>0</strong></div>
+      </div>
+
+      <div class="fin-toolbar">
+        <div class="fin-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" data-fin-search placeholder="Search by code, name, or type…">
+        </div>
+        <span class="fin-count" data-fin-count></span>
+      </div>
+
+      <div class="users-table-wrap fin-table-wrap">
+        <table class="users-table fin-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody data-fin-body></tbody>
+        </table>
+        <div class="users-empty" data-fin-empty>No accounts match your search.</div>
+        <div class="users-loading" data-fin-loading>Loading chart of accounts…</div>
+      </div>
+
+      <div class="users-banner" data-fin-banner hidden></div>
+    </div>
+
+    <div class="users-modal" data-fin-modal hidden>
+      <div class="users-modal-card">
+        <div class="users-modal-head">
+          <h3 data-fin-modal-title>Add account</h3>
+          <button type="button" class="users-modal-close" data-fin-modal-close>×</button>
+        </div>
+        <form data-fin-form>
+          <input type="hidden" name="id" data-fin-field="id">
+          <div class="users-form-grid">
+            <label>Code *
+              <input type="text" name="code" data-fin-field="code" required placeholder="e.g. 1000">
+            </label>
+            <label>Name *
+              <input type="text" name="name" data-fin-field="name" required placeholder="e.g. Cash">
+            </label>
+            <label>Type *
+              <input type="text" name="account_type" data-fin-field="account_type" list="fin-account-types" required placeholder="e.g. Asset">
+              <datalist id="fin-account-types">
+                <option value="Asset"></option>
+                <option value="Liability"></option>
+                <option value="Equity"></option>
+                <option value="Revenue"></option>
+                <option value="Expense"></option>
+              </datalist>
+            </label>
+            <label>Parent account
+              <select name="parent_account" data-fin-field="parent_account">
+                <option value="">— None —</option>
+              </select>
+            </label>
+            <label>Status
+              <select name="is_active" data-fin-field="is_active">
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </label>
+          </div>
+          <p class="users-create-hint">Codes must be unique. Accounts can be nested under a parent for a chart-of-accounts hierarchy; deactivate rather than delete an account that has been used.</p>
+          <div class="users-form-actions">
+            <button type="button" class="users-modal-cancel" data-fin-modal-close>Cancel</button>
+            <button type="submit" class="primary-button" data-fin-save>Save account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    </div>
+
+    <div class="fin-section" data-fin-section="rules" hidden>
+    <div class="fin-card fin-card-rules">
+      <div class="fin-card-head">
+        <div class="fin-card-title">
+          <span class="fin-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></svg></span>
+          <div><h3>Financial rules</h3><p>Defaults applied when billing, closing periods, and tracking budgets</p></div>
+        </div>
+        <span class="fin-saved-chip" data-fin-rules-status>Defaults synced</span>
+      </div>
+
+      <form class="fin-rules" data-fin-rules-form>
+        <div class="fin-rule-group">
+          <div class="fin-rule-group-title">Fiscal calendar</div>
+
+          <div class="fin-rule-row">
+            <label class="fin-rule-label">Fiscal year starts
+              <span>First month &amp; day of the accounting year</span>
+            </label>
+            <div class="fin-rule-input">
+              <select name="fiscal_year_start_month" data-fin-rules-field="fiscal_year_start_month">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+              <input type="number" name="fiscal_year_start_day" data-fin-rules-field="fiscal_year_start_day" min="1" max="31" step="1">
+            </div>
+          </div>
+
+          <div class="fin-rule-row">
+            <div class="fin-rule-label">Lock financial periods
+              <span>Close periods automatically after N days (0 = never)</span>
+            </div>
+            <div class="fin-rule-input">
+              <label class="fin-switch">
+                <input type="checkbox" name="lock_financial_periods" data-fin-rules-field="lock_financial_periods">
+                <span class="fin-switch-track"><span class="fin-switch-thumb"></span></span>
+              </label>
+              <span class="fin-lock-days">
+                <input type="number" name="period_lock_after_days" data-fin-rules-field="period_lock_after_days" min="0" step="1">
+                <em>days</em>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="fin-rule-group">
+          <div class="fin-rule-group-title">Billing</div>
+
+          <div class="fin-rule-row">
+            <label class="fin-rule-label">Default tax rate
+              <span>Applied to new purchase orders and invoices</span>
+            </label>
+            <div class="fin-rule-input">
+              <select name="default_tax_rate" data-fin-rules-field="default_tax_rate">
+                <option value="">— No default —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fin-rule-row">
+            <label class="fin-rule-label">Payment terms
+              <span>Net term used when creating an invoice</span>
+            </label>
+            <div class="fin-rule-input">
+              <select name="default_payment_terms" data-fin-rules-field="default_payment_terms">
+                <option value="NET30">Net 30</option>
+                <option value="NET60">Net 60</option>
+                <option value="IMMEDIATE">Immediate</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fin-rule-row">
+            <label class="fin-rule-label">Retention
+              <span>Percentage withheld from subcontractor payments</span>
+            </label>
+            <div class="fin-rule-input fin-rule-pct">
+              <input type="number" name="retention_percent" data-fin-rules-field="retention_percent" step="0.01" min="0" max="100">
+              <em>%</em>
+            </div>
+          </div>
+        </div>
+
+        <div class="fin-rule-group">
+          <div class="fin-rule-group-title">Budget control</div>
+
+          <div class="fin-rule-row">
+            <label class="fin-rule-label">Budget alert
+              <span>Project managers are alerted when a cost code reaches this share</span>
+            </label>
+            <div class="fin-rule-input fin-rule-pct">
+              <input type="number" name="budget_alert_percent" data-fin-rules-field="budget_alert_percent" step="0.01" min="0" max="100">
+              <em>%</em>
+            </div>
+          </div>
+        </div>
+
+        <div class="fin-rule-footer">
+          <span class="fin-rule-note">Changes apply to new documents, invoices, and periods.</span>
+          <button type="submit" class="primary-button" data-fin-rules-save>Save financial rules</button>
+        </div>
+      </form>
+
+      <div class="users-banner" data-fin-rules-banner hidden></div>
+    </div>
+    </div>
   </div>
 
   <div class="settings-pane" data-settings-pane="taxes">
@@ -246,7 +461,22 @@
 
   <div class="settings-pane" data-settings-pane="notifications">
     <div class="settings-pane-head"><div><h2>Notifications</h2><p>What the team is alerted about and how</p></div></div>
-    <div class="settings-placeholder">Notification preferences are ready to connect — approval requests, payment due reminders, and stock alerts.</div>
+
+    <div class="fin-card notif-card">
+      <div class="fin-card-head">
+        <div class="fin-card-title">
+          <span class="fin-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          <div><h3>Alert preferences</h3><p>Alerts are generated on a schedule for the roles below. Toggle each type on or off and tune how far ahead time-based alerts look.</p></div>
+        </div>
+        <span class="fin-saved-chip" data-notif-status>Current settings</span>
+      </div>
+
+      <div class="notif-list" data-notif-prefs-list></div>
+
+      <div class="notif-note">Alerts are produced on a schedule. Turning a type off prevents new alerts of that kind; it doesn't remove existing messages.</div>
+
+      <div class="users-banner" data-notif-banner hidden></div>
+    </div>
   </div>
 
   <div class="settings-pane" data-settings-pane="audit">
