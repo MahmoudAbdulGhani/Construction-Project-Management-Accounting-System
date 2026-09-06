@@ -97,7 +97,9 @@
         optional = false
     ) {
         const response = await fetch(
-            `/api/projects/${path}`,
+            path.startsWith("/")
+                ? path
+                : `/api/projects/${path}`,
             {
                 credentials: "same-origin",
                 ...options,
@@ -107,9 +109,18 @@
 
                     ...(options.method
                         ? {
-                            "Content-Type":
-                                "application/json",
-                            "X-CSRFToken": csrf()
+                            "X-CSRFToken": csrf(),
+
+                            // A multipart upload (FormData) must not get a
+                            // Content-Type override -- the browser sets it,
+                            // including the boundary, when the body is raw.
+                            ...(options.body instanceof
+                            FormData
+                                ? {}
+                                : {
+                                    "Content-Type":
+                                        "application/json"
+                                })
                         }
                         : {}),
 
@@ -1861,6 +1872,7 @@
 
 
                     const filePath =
+                        document.file_url ||
                         document.file_path ||
                         document.file ||
                         "#";
@@ -3206,6 +3218,49 @@
             form.dataset.orderId =
                 order.id;
         }
+
+
+        else if (
+            action ===
+            "upload-document"
+        ) {
+
+            fields({
+
+                title:
+                    "Upload document",
+
+                action,
+
+                submit:
+                    "Upload",
+
+                html:
+
+                    `
+                        <label>
+                            File
+
+                            <input
+                                name="file"
+                                type="file"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            Document type
+
+                            <input
+                                name="document_type"
+                                type="text"
+                                placeholder=
+                                    "e.g. Contract, Drawing, Invoice"
+                            >
+                        </label>
+                    `
+            });
+        }
     }
 
 
@@ -3366,6 +3421,10 @@
                         action ===
                         "upload-document"
                     ) {
+
+                        open(
+                            "upload-document"
+                        );
 
                         return;
                     }
@@ -3794,6 +3853,75 @@
 
                     const action =
                         form.dataset.action;
+
+
+                    /* -----------------------------------------
+                       Document upload
+                       ----------------------------------------- */
+
+                    if (
+                        action ===
+                        "upload-document"
+                    ) {
+
+                        const body =
+                            new FormData(
+                                form
+                            );
+
+
+                        body.append(
+                            "entity_type",
+                            "project"
+                        );
+
+                        body.append(
+                            "entity_id",
+                            id
+                        );
+
+
+                        submit.disabled =
+                            true;
+
+                        error.textContent =
+                            "";
+
+
+                        try {
+
+                            await request(
+                                "/api/documents/documents/",
+                                {
+                                    method:
+                                        "POST",
+                                    body
+                                }
+                            );
+
+
+                            dialog.close();
+
+                            form.reset();
+
+                            await load();
+
+                        }
+
+                        catch (exception) {
+
+                            error.textContent =
+                                exception.message;
+                        }
+
+                        finally {
+
+                            submit.disabled =
+                                false;
+                        }
+
+                        return;
+                    }
 
 
                     /* -----------------------------------------
