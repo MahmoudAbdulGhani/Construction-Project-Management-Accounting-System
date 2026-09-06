@@ -152,6 +152,20 @@ class ProjectViewSet(viewsets.ModelViewSet):
         qs = project.phases.all()
         return Response(PhaseSerializer(qs, many=True).data)
 
+    @action(detail=True, methods=["get"], url_path="financial-summary")
+    def financial_summary(self, request, pk=None):
+        """
+        Project financial roll-up derived from linked invoices and their
+        payment allocations (not budgets): revenue (client invoices) and
+        expenses (supplier + contractor invoices), each as billed /
+        received-or-paid / outstanding, plus net accrual and cash
+        positions. Changes the moment a payment allocation is recorded.
+        """
+        from .financial import get_project_financial_summary
+
+        project = self.get_object()
+        return Response(get_project_financial_summary(project))
+
     @action(detail=True, methods=["get"], url_path="budget-summary")
     def budget_summary(self, request, pk=None):
         """

@@ -15,6 +15,7 @@ from users.permissions import IsOwnerOrAccountant
 from .models import Payment, PaymentAllocation, Receipt
 from .pdf import render_receipt_pdf
 from .serializers import PaymentAllocationSerializer, PaymentSerializer, ReceiptSerializer
+from .services import issue_receipt_for_payment
 
 
 def _validated_uuid(params, name):
@@ -39,7 +40,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     Filterable by party, direction, and payment date.
     """
 
-    queryset = Payment.objects.select_related('client', 'supplier', 'created_by').prefetch_related('allocations').all()
+    # receipts/ through the reverse OneToOne for serializer.has_receipt.
+    queryset = Payment.objects.select_related('client', 'supplier', 'created_by', 'receipt').prefetch_related('allocations').all()
     serializer_class = PaymentSerializer
     permission_classes = [IsOwnerOrAccountant]
     search_fields = ['payment_number', 'reference', 'client__name', 'supplier__name']
@@ -74,7 +76,14 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # Auto-issue the payment's receipt, in either direction: money
+        # received from a client and money paid out to a supplier/
+        # employee/contractor are each receipted at record time (a
+        # payment is a ledger entry -- the receipt comes with it, not as
+        # a separate afterthought). issue_receipt_for_payment is a no-op
+        # if a receipt somehow already exists.
+        payment = serializer.save(created_by=self.request.user)
+        issue_receipt_for_payment(payment)
 
 
 class PaymentAllocationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
@@ -88,10 +97,13 @@ class PaymentAllocationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     accounting entry is, with an explicit offsetting record, not an
     in-place edit.
 
-    Filterable by ?payment=, ?client_invoice=, ?supplier_invoice=.
+    Filterable by ?payment=, ?client_invoice=, ?supplier_invoice=,
+    ?contractor_invoice=.
     """
 
-    queryset = PaymentAllocation.objects.select_related('payment', 'client_invoice', 'supplier_invoice').all()
+    queryset = PaymentAllocation.objects.select_related(
+        'payment', 'client_invoice', 'supplier_invoice', 'contractor_invoice',
+    ).all()
     serializer_class = PaymentAllocationSerializer
     permission_classes = [IsOwnerOrAccountant]
 
@@ -110,6 +122,10 @@ class PaymentAllocationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         supplier_invoice_id = _validated_uuid(params, 'supplier_invoice')
         if supplier_invoice_id:
             queryset = queryset.filter(supplier_invoice_id=supplier_invoice_id)
+
+        contractor_invoice_id = _validated_uuid(params, 'contractor_invoice')
+        if contractor_invoice_id:
+            queryset = queryset.filter(contractor_invoice_id=contractor_invoice_id)
 
         return queryset
 

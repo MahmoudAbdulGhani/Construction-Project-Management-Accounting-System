@@ -38,7 +38,10 @@ from reportlab.platypus import (
 
 from company.models import CompanyProfile
 
-from .models import Receipt
+from contractors.models import Contractor
+from employees.models import Employee
+
+from .models import Payment, Receipt
 
 
 # Brand palette (teal tones matching the Cedar Control dashboard).
@@ -81,12 +84,24 @@ def render_receipt_pdf(receipt: Receipt) -> bytes:
     except Exception:
         company = None
 
-    # Resolve the transaction party (a receipt is always for an INCOMING
-    # payment, so this is normally a client; supplier is kept for safety).
-    party = payment.client or payment.supplier
+    # Resolve the transaction party. Receipts now cover both directions:
+    # money received from a client (client) or paid out to a supplier /
+    # employee / contractor. The unmanaged Employee/Contractor reflections
+    # may be absent in some environments, so resolution is best-effort.
+    party = None
+    if payment.client_id:
+        party = payment.client
+    elif payment.supplier_id:
+        party = payment.supplier
+    elif payment.contractor_id:
+        party = _lookup_reflection(Contractor, payment.contractor_id)
+    elif payment.employee_id:
+        party = _lookup_reflection(Employee, payment.employee_id)
+
     party_name = _display_party_name(party)
     party_sub = _display_party_sub(party)
     party_block = _display_party_block(party)
+    party_heading = "RECEIVED FROM" if payment.direction == Payment.Direction.INCOMING else "PAID TO"
 
     styles = _make_styles()
 
@@ -185,7 +200,7 @@ def render_receipt_pdf(receipt: Receipt) -> bytes:
     block = Table(
         [
             [
-                Paragraph("RECEIVED FROM", styles["label"]),
+                Paragraph(party_heading, styles["label"]),
                 Paragraph("ISSUED BY", styles["label"]),
             ],
             [
@@ -216,7 +231,10 @@ def render_receipt_pdf(receipt: Receipt) -> bytes:
     summary_rows = [
         [Paragraph("DESCRIPTION", styles["th"]), Paragraph("", styles["th"]), Paragraph("", styles["th"])],
         [
-            Paragraph(f"Payment <b>{_esc(payment.payment_number)}</b> received", styles["cell"]),
+            Paragraph(
+                f"Payment <b>{_esc(payment.payment_number)}</b> {'received' if payment.direction == Payment.Direction.INCOMING else 'paid'}",
+                styles["cell"],
+            ),
             Paragraph(_esc(payment.payment_method or "-"), styles["cell_center"]),
             Paragraph(f"<b>{_money(receipt.amount)}</b>", styles["cell_right"]),
         ],
@@ -300,11 +318,17 @@ def render_receipt_pdf(receipt: Receipt) -> bytes:
     story.append(Spacer(1, 40))
 
     # ---- Signature / acknowledgement ----
-    ack = Paragraph(
-        "<font size='9' color='%s'>Thank you. This receipt acknowledges receipt of the above payment from %s.</font>"
-        % (_MUTED.hexval(), _esc(party_name)),
-        styles["body"],
-    )
+    if payment.direction == Payment.Direction.INCOMING:
+        ack_text = (
+            "<font size='9' color='%s'>Thank you. This receipt acknowledges "
+            "receipt of the above payment from %s.</font>" % (_MUTED.hexval(), _esc(party_name))
+        )
+    else:
+        ack_text = (
+            "<font size='9' color='%s'>This receipt acknowledges payment of the "
+            "above amount to %s.</font>" % (_MUTED.hexval(), _esc(party_name))
+        )
+    ack = Paragraph(ack_text, styles["body"])
     story.append(ack)
     story.append(Spacer(1, 40))
 
@@ -371,6 +395,18 @@ def _display_party_name(party) -> str:
         return "-"
     company_name = getattr(party, "company_name", None)
     return company_name or party.name
+
+
+def _lookup_reflection(model, pk):
+    """
+    Fetch one row from an unmanaged reflection (Contractor/Employee),
+    returning None if the table is absent (test/alternate environments)
+    or the row doesn't exist.
+    """
+    try:
+        return model.objects.filter(pk=pk).first()
+    except Exception:
+        return None
 
 
 def _display_party_sub(party) -> str:
