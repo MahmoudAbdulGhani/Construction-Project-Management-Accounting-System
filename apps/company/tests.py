@@ -28,11 +28,11 @@ from users.models import Role, User
 from users.testing import WithUsersTableMixin
 
 from .models import DEFAULT_CURRENCY_UUID, CompanyProfile, FinancialSettings
+from .models import DEFAULT_CURRENCY_UUID, CompanyProfile
 from .storage import SupabaseStorageError, upload_logo
 from .testing import WithCompanyDetailsTableMixin
 
 
-# ── Server-rendered page tests (existing) ────────────────────────────────
 
 
 class CompanySettingsPageTests(WithCompanyDetailsTableMixin, TestCase):
