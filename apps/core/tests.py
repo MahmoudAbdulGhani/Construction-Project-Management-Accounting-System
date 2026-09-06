@@ -422,6 +422,8 @@ class PartnersPageRenderTests(WithUsersTableMixin, TestCase):
         self.assertIn("partners.css", content)
         self.assertIn("data-partner-rows", content)
         self.assertIn("partner-search-input", content)
+        self.assertIn("data-partner-detail-dialog", content)
+        self.assertIn("data-partner-detail-close", content)
 
 
 class WorkforcePageRenderTests(WithUsersTableMixin, TestCase):

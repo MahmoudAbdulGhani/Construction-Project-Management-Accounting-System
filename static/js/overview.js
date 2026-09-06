@@ -193,7 +193,7 @@
     if (!receipts) { body.innerHTML = `<tr class="empty-row"><td colspan="5"><b>Could not load receipts</b><span>The payments API is unavailable.</span></td></tr>`; return; }
     const latest = receipts.slice().sort((a, b) => a.receipt_date < b.receipt_date ? 1 : -1).slice(0, 5);
     if (!latest.length) { body.innerHTML = `<tr class="empty-row"><td colspan="5"><b>No receipts yet</b><span>Incoming payments appear here once a receipt is issued.</span></td></tr>`; return; }
-    body.innerHTML = latest.map(r => `<tr><td><strong>${esc(r.receipt_number)}</strong><span>${esc(r.receipt_date)}</span></td><td>${esc(r.client_name || r.supplier_name || "—")}</td><td>${esc(r.receipt_date)}</td><td>${esc(r.payment_method || "—")}</td><td>${money(r.amount)}</td></tr>`).join("");
+    body.innerHTML = latest.map(r => `<tr><td><strong>${esc(r.receipt_number)}</strong><span>${esc(r.receipt_date)}</span></td><td>${esc(r.payee_name || r.client_name || r.supplier_name || r.contractor_name || r.employee_name || "—")}</td><td>${esc(r.receipt_date)}</td><td>${esc(r.payment_method || "—")}</td><td>${money(r.amount)}</td></tr>`).join("");
   }
 
   async function loadAccountant() {

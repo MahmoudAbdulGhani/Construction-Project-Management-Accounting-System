@@ -46,7 +46,8 @@
         phases: [],
         projects: [],
         statusFilter: "all",
-        search: ""
+        search: "",
+        editAssignmentProject: null
     };
 
     let detailEmployeeId = null;
@@ -1929,6 +1930,51 @@
         $("[data-employee-form]");
 
 
+    async function populateEmployeeAssignFields() {
+        const select =
+            $("[data-employee-assign-project]");
+
+        if (!select) {
+            return;
+        }
+
+        if (!state.projects.length) {
+            try {
+                state.projects =
+                    await fetchAll(PROJECTS_API);
+            } catch (e) {
+                state.projects = [];
+            }
+        }
+
+        if (select.options.length <= 1) {
+            state.projects.forEach(p => {
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+
+                option.value = p.id;
+
+                option.textContent =
+                    `${p.code} — ${p.name}`;
+
+                select.appendChild(option);
+            });
+        }
+
+        const dateInput =
+            $("[data-employee-assign-date]");
+
+        if (dateInput && !dateInput.value) {
+            dateInput.value =
+                new Date()
+                    .toISOString()
+                    .slice(0, 10);
+        }
+    }
+
+
     function openEmployeeForm(employee = null) {
         if (
             !employeeOverlay ||
@@ -2012,6 +2058,24 @@
 
         employeeOverlay.hidden = false;
 
+        state.editAssignmentProject = null;
+
+        populateEmployeeAssignFields().then(async () => {
+            if (employee && employee.id) {
+                try {
+                    const assignments = await api(`${API}${employee.id}/projects/`);
+                    const current = assignments.find(a => !a.released_at) || assignments[0];
+                    if (current && current.project) {
+                        const select = $("[data-employee-assign-project]");
+                        const date = $("[data-employee-assign-date]");
+                        if (select) select.value = current.project.id;
+                        if (date) date.value = current.assigned_at || "";
+                        state.editAssignmentProject = current.project.id;
+                    }
+                } catch (_) {}
+            }
+        });
+
         /*
          * Prevent the browser from restoring the old form
          * position and focus the name field.
@@ -2062,6 +2126,13 @@
                 new FormData(form).entries()
             );
 
+        const assignProject =
+            formData.assign_project || "";
+
+        const assignedAt =
+            formData.assigned_at ||
+            new Date().toISOString().slice(0, 10);
+
 
         const payload = {};
 
@@ -2072,7 +2143,11 @@
                     key ===
                         "csrfmiddlewaretoken" ||
                     key ===
-                        "employee_edit_id"
+                        "employee_edit_id" ||
+                    key ===
+                        "assign_project" ||
+                    key ===
+                        "assigned_at"
                 ) {
                     return;
                 }
@@ -2144,6 +2219,31 @@
                                 )
                         }
                     );
+            }
+
+
+            if (
+                assignProject &&
+                savedEmployee?.id &&
+                (
+                    !employeeId ||
+                    String(assignProject) !==
+                        String(state.editAssignmentProject)
+                )
+            ) {
+                await api(
+                    `${API}${savedEmployee.id}/projects/`,
+                    {
+                        method: "POST",
+                        body:
+                            JSON.stringify({
+                                project_id:
+                                    assignProject,
+                                assigned_at:
+                                    assignedAt
+                            })
+                    }
+                );
             }
 
 

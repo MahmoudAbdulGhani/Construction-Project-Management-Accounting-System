@@ -20,7 +20,7 @@
   </div>
   <div class="responsive-table">
     <table>
-      <thead><tr><th>Receipt</th><th>Date</th><th>Payment</th><th>Client / Supplier</th><th>Method</th><th>Amount</th><th></th></tr></thead>
+      <thead><tr><th>Receipt</th><th>Date</th><th>Payment</th><th>Party</th><th>Method</th><th>Amount</th><th></th></tr></thead>
       <tbody data-receipt-rows>
         <tr class="empty-row"><td colspan="7"><b>Loading receipts…</b><span>Fetching from the payments API.</span></td></tr>
       </tbody>
@@ -28,4 +28,4 @@
   </div>
 </section>
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/receipts.js' %}" defer></script>{% endblock %}
+{% block page_js %}<script src="{% static 'js/receipts.js' %}?v=20260906-1" defer></script>{% endblock %}

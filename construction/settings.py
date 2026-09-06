@@ -108,6 +108,7 @@ MIDDLEWARE = [
     'audit.middleware.AuditContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'construction.middleware.NoStoreHtmlMiddleware',
 ]
 
 ROOT_URLCONF = 'construction.urls'
@@ -179,8 +180,13 @@ TEST_RUNNER = 'construction.test_runner.AppsDirTestRunner'
 # are only needed for the runtime logo upload in company_settings -- the
 # fallback public display path (company_logo context processor) does not
 # require them.
+# SUPABASE_SERVICE_ROLE_KEY (Project Settings -> API -> service_role secret)
+# is preferred for uploads: it bypasses Storage RLS entirely, so the logo
+# bucket never needs a public INSERT policy. It is used server-side only and
+# must never be exposed client-side.
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_LOGO_BUCKET = os.getenv("SUPABASE_LOGO_BUCKET", "logo")
 
 

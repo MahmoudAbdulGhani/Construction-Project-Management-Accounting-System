@@ -42,6 +42,13 @@ class ProjectListSerializer(serializers.ModelSerializer):
 
     manager = EmployeeSummarySerializer(read_only=True)
 
+    buyer_id = serializers.PrimaryKeyRelatedField(
+        source="buyer",
+        queryset=Client.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+
     class Meta:
         model = Project
         fields = [
@@ -55,6 +62,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
             "expected_completion_date",
             "is_archived",
             "manager",
+            "buyer_id",
         ]
 
 
@@ -92,12 +100,15 @@ class ProjectEmployeeSerializer(serializers.ModelSerializer):
 
 
 class ProjectDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = ProjectDocument
         fields = [
             "id",
             "file_name",
             "file_path",
+            "file_url",
             "file_type",
             "file_size",
             "document_type",
@@ -105,6 +116,11 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
             "uploaded_at",
         ]
         read_only_fields = fields
+
+    def get_file_url(self, obj):
+        from django.core.files.storage import default_storage
+
+        return default_storage.url(obj.file_path)
 
 
 class PhaseSerializer(serializers.ModelSerializer):

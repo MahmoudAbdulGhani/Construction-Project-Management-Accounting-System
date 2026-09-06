@@ -55,5 +55,9 @@ def company_logo(request):
         profile = CompanyProfile.objects.order_by("-updated_at").first()
     except DatabaseError:
         profile = None
-    return {"company_logo": getattr(profile, "logo", None) or None}
+    logo = getattr(profile, "logo", None) or None
+    version = ""
+    if logo and getattr(profile, "updated_at", None) is not None:
+        version = str(int(profile.updated_at.timestamp()))
+    return {"company_logo": logo, "company_logo_version": version}
 

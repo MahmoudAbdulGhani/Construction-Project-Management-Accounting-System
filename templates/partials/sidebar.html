@@ -1,6 +1,6 @@
 <aside class="sidebar" data-sidebar>
   <div class="brand">
-    <div class="brand-mark">{% if company_logo %}<img class="brand-logo" src="{{ company_logo }}" alt="Logo" width="48" height="48">{% else %}<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20h16M6 20V9h12v11M9 9V5h6v4M9 13h2m2 0h2m-6 3h2m2 0h2"/></svg>{% endif %}</div>
+    <div class="brand-mark">{% if company_logo %}<img class="brand-logo" src="{{ company_logo }}{% if company_logo_version %}?v={{ company_logo_version }}{% endif %}" alt="Logo" width="48" height="48">{% else %}<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20h16M6 20V9h12v11M9 9V5h6v4M9 13h2m2 0h2m-6 3h2m2 0h2"/></svg>{% endif %}</div>
     <div><strong>CEDAR CONSTRUCTION</strong><span>Construction operations</span></div>
     <button class="mobile-close" data-sidebar-close aria-label="Close navigation">&times;</button>
   </div>

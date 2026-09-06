@@ -26,6 +26,8 @@ python -c "import secrets; print(secrets.token_urlsafe(50))"
 
 Put that output in `DJANGO_SECRET_KEY`. The `.env` file is ignored by both Git and Docker builds; never commit it.
 
+The company-logo upload (Company settings) uses the Supabase **service_role** secret from `SUPABASE_SERVICE_ROLE_KEY` when set (it bypasses Storage RLS), falling back to `SUPABASE_ANON_KEY` otherwise. Keep the service_role key server-side only.
+
 Build and start the application:
 
 ```powershell
