@@ -5,14 +5,28 @@ DRF serializers for the ``invoicing`` app -- Supplier Invoices slice
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
-from .models import ClientInvoice, ClientInvoiceItem, SupplierInvoice, SupplierInvoiceItem
+from contractors.models import Contractor
+
+from .models import (
+    ClientInvoice,
+    ClientInvoiceItem,
+    ContractorInvoice,
+    ContractorInvoiceItem,
+    SupplierInvoice,
+    SupplierInvoiceItem,
+)
 from .services import (
     compute_client_invoice_item_amounts,
+    compute_contractor_item_amounts,
     compute_item_amounts,
+    create_invoice_with_generated_number,
     recalculate_client_invoice_totals,
+    recalculate_contractor_invoice_totals,
     recalculate_invoice_totals,
     transition_client_invoice_status,
+    transition_contractor_invoice_status,
     transition_status,
 )
 
@@ -91,17 +105,28 @@ class SupplierInvoiceSerializer(serializers.ModelSerializer):
 
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     purchase_order_number = serializers.CharField(source='purchase_order.po_number', read_only=True, default=None)
+    project_name = serializers.CharField(source='project.name', read_only=True, default=None)
     items = SupplierInvoiceItemSerializer(many=True, read_only=True)
     outstanding_balance = serializers.SerializerMethodField()
+    # Optional: a blank invoice_number gets auto-generated
+    # (INV-<year>-<seq>) by create_invoice_with_generated_number on create.
+    invoice_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=100,
+        validators=[UniqueValidator(queryset=SupplierInvoice.objects.all())],
+    )
 
     class Meta:
         model = SupplierInvoice
         fields = [
             'id', 'supplier', 'supplier_name', 'purchase_order', 'purchase_order_number',
+            'project', 'project_name',
             'invoice_number', 'invoice_date', 'due_date', 'subtotal', 'tax_amount',
             'total_amount', 'status', 'outstanding_balance', 'items', 'created_at', 'updated_at',
         ]
         read_only_fields = ['subtotal', 'tax_amount', 'total_amount', 'status', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        return create_invoice_with_generated_number(SupplierInvoice, validated_data)
 
     def get_outstanding_balance(self, obj):
         # BRD 5.23/5.24: outstanding balance is always calculated from
@@ -187,6 +212,11 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True, default=None)
     items = ClientInvoiceItemSerializer(many=True, read_only=True)
     outstanding_balance = serializers.SerializerMethodField()
+    # Optional: a blank invoice_number gets auto-generated on create.
+    invoice_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=100,
+        validators=[UniqueValidator(queryset=ClientInvoice.objects.all())],
+    )
 
     class Meta:
         model = ClientInvoice
@@ -201,6 +231,9 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
 
+    def create(self, validated_data):
+        return create_invoice_with_generated_number(ClientInvoice, validated_data)
+
     def get_outstanding_balance(self, obj):
         # See SupplierInvoiceSerializer.get_outstanding_balance's comment.
         from payments.services import outstanding_balance
@@ -211,5 +244,105 @@ def apply_client_transition(invoice: ClientInvoice, target_status: str) -> Clien
     """Same reasoning as apply_transition, for ClientInvoice."""
     try:
         return transition_client_invoice_status(invoice, target_status)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({'status': exc.messages})
+
+
+class ContractorInvoiceItemSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ContractorInvoiceItem CRUD.
+
+    Mirrors SupplierInvoiceItemSerializer: tax_amount/total_amount are
+    writable so a flat-charge line can pass its total through to
+    compute_contractor_item_amounts, which still has the final say on the
+    quantity*price path. There's no material reference -- a contractor
+    invoice bills work, not goods. "Items only editable while the parent
+    invoice is DRAFT" is enforced in the viewset.
+    """
+
+    class Meta:
+        model = ContractorInvoiceItem
+        fields = [
+            'id', 'contractor_invoice', 'description',
+            'quantity', 'unit_price', 'tax_rate', 'tax_amount', 'total_amount',
+        ]
+
+    def validate(self, attrs):
+        quantity = attrs.get('quantity', getattr(self.instance, 'quantity', None))
+        unit_price = attrs.get('unit_price', getattr(self.instance, 'unit_price', None))
+        if (quantity is None) != (unit_price is None):
+            raise serializers.ValidationError(
+                "quantity and unit_price must both be set, or both left blank for a flat-charge line."
+            )
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        item = ContractorInvoiceItem(**validated_data)
+        compute_contractor_item_amounts(item)
+        item.save()
+        recalculate_contractor_invoice_totals(item.contractor_invoice)
+        return item
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        compute_contractor_item_amounts(instance)
+        instance.save()
+        recalculate_contractor_invoice_totals(instance.contractor_invoice)
+        return instance
+
+
+class ContractorInvoiceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ContractorInvoice header CRUD.
+
+    Same shape as SupplierInvoiceSerializer: contractor_name is resolved
+    from the unmanaged Contractor reflection, totals/status are
+    read-only, and status changes go through mark_sent/cancel (or
+    payments.services.allocate_payment for PARTIALLY_PAID/PAID).
+    """
+
+    contractor_name = serializers.SerializerMethodField()
+    project_name = serializers.CharField(source='project.name', read_only=True, default=None)
+    items = ContractorInvoiceItemSerializer(many=True, read_only=True)
+    outstanding_balance = serializers.SerializerMethodField()
+    # Optional: a blank invoice_number gets auto-generated on create.
+    invoice_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=100,
+        validators=[UniqueValidator(queryset=ContractorInvoice.objects.all())],
+    )
+
+    class Meta:
+        model = ContractorInvoice
+        fields = [
+            'id', 'contractor_id', 'contractor_name', 'project', 'project_name',
+            'invoice_number', 'invoice_date', 'due_date', 'subtotal', 'tax_amount',
+            'total_amount', 'status', 'outstanding_balance', 'items', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['subtotal', 'tax_amount', 'total_amount', 'status', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        return create_invoice_with_generated_number(ContractorInvoice, validated_data)
+
+    def get_contractor_name(self, obj):
+        return Contractor.objects.filter(pk=obj.contractor_id).values_list('name', flat=True).first()
+
+    def validate_contractor_id(self, value):
+        if not Contractor.objects.filter(pk=value).exists():
+            raise serializers.ValidationError("Contractor does not exist.")
+        return value
+
+    def get_outstanding_balance(self, obj):
+        # See SupplierInvoiceSerializer.get_outstanding_balance's comment.
+        from payments.services import outstanding_balance
+        return DECIMAL_FIELD.to_representation(outstanding_balance(obj))
+
+
+def apply_contractor_transition(invoice: ContractorInvoice, target_status: str) -> ContractorInvoice:
+    """Same reasoning as apply_transition, for ContractorInvoice."""
+    try:
+        return transition_contractor_invoice_status(invoice, target_status)
     except DjangoValidationError as exc:
         raise serializers.ValidationError({'status': exc.messages})

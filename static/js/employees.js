@@ -259,22 +259,52 @@
   }
 
   /* ---- Create employee ---- */
+  async function populateEmployeeAssignFields() {
+    const select = $("[data-employee-assign-project]");
+    if (!select) return;
+    if (!state.projects) {
+      try { state.projects = await fetchAll(PROJECTS_API); } catch (e) { state.projects = []; }
+    }
+    if (select.options.length <= 1) {
+      state.projects.forEach(p => {
+        const option = document.createElement("option");
+        option.value = p.id;
+        option.textContent = `${p.code} — ${p.name}`;
+        select.appendChild(option);
+      });
+    }
+    const dateInput = $("[data-employee-assign-date]");
+    if (dateInput && !dateInput.value) {
+      dateInput.value = new Date().toISOString().slice(0, 10);
+    }
+  }
+
   function bindCreate() {
     const overlay = $("[data-employee-create]");
-    $("[data-employee-new]").addEventListener("click", () => { overlay.hidden = false; });
+    $("[data-employee-new]").addEventListener("click", () => { populateEmployeeAssignFields(); overlay.hidden = false; });
     $("[data-employee-create-close]").addEventListener("click", () => { overlay.hidden = true; });
     $("[data-employee-create-cancel]").addEventListener("click", () => { overlay.hidden = true; });
     $("[data-employee-form]").addEventListener("submit", async e => {
       e.preventDefault();
       const form = e.currentTarget;
+      const formData = Object.fromEntries(new FormData(form).entries());
       const payload = Object.fromEntries(new FormData(form).entries());
+      delete payload.assign_project;
+      delete payload.assigned_at;
       if (!payload.labor_rate) delete payload.labor_rate;
       if (!payload.phone) delete payload.phone;
       if (!payload.email) delete payload.email;
       if (!payload.position) delete payload.position;
       if (!payload.department) delete payload.department;
       try {
-        await api(API, { method: "POST", body: JSON.stringify(payload) });
+        const created = await api(API, { method: "POST", body: JSON.stringify(payload) });
+        const assignProject = formData.assign_project || "";
+        if (assignProject && created?.id) {
+          await api(`${API}${created.id}/projects/`, {
+            method: "POST",
+            body: JSON.stringify({ project_id: assignProject, assigned_at: formData.assigned_at || new Date().toISOString().slice(0, 10) }),
+          });
+        }
         overlay.hidden = true;
         form.reset();
         await refresh();

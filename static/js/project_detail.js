@@ -97,7 +97,9 @@
         optional = false
     ) {
         const response = await fetch(
-            `/api/projects/${path}`,
+            path.startsWith("/")
+                ? path
+                : `/api/projects/${path}`,
             {
                 credentials: "same-origin",
                 ...options,
@@ -107,9 +109,18 @@
 
                     ...(options.method
                         ? {
-                            "Content-Type":
-                                "application/json",
-                            "X-CSRFToken": csrf()
+                            "X-CSRFToken": csrf(),
+
+                            // A multipart upload (FormData) must not get a
+                            // Content-Type override -- the browser sets it,
+                            // including the boundary, when the body is raw.
+                            ...(options.body instanceof
+                            FormData
+                                ? {}
+                                : {
+                                    "Content-Type":
+                                        "application/json"
+                                })
                         }
                         : {}),
 
@@ -157,7 +168,9 @@
     let budgets = [];
     let changeOrders = [];
     let projectEmployees = [];
+    let projectContractors = [];
     let budgetSummaries = new Map();
+    let clients = [];
 
 
     /* =========================================================
@@ -514,13 +527,68 @@
       if (!container) return;
 
 
-      const members =
+      const employees =
           Array.isArray(projectEmployees)
               ? projectEmployees.filter(
                   assignment =>
                       !assignment.released_at
               )
               : [];
+
+      const contractors =
+          Array.isArray(projectContractors)
+              ? projectContractors.filter(
+                  assignment =>
+                      !assignment.released_at
+              )
+              : [];
+
+      const members = [
+          ...employees.map(assignment => {
+
+              const employee =
+                  assignment.employee || {};
+
+              const employeeFirstName =
+                  employee.first_name || "";
+
+              const employeeLastName =
+                  employee.last_name || "";
+
+              return {
+                  name:
+                      assignment.employee_name ||
+                      employee.name ||
+                      employee.full_name ||
+                      `${employeeFirstName} ${employeeLastName}`.trim() ||
+                      "Team member",
+
+                  role:
+                      assignment.role_on_project ||
+                      employee.position ||
+                      employee.job_title ||
+                      employee.role ||
+                      "Team member"
+              };
+          }),
+
+          ...contractors.map(assignment => {
+
+              const contractor =
+                  assignment.contractor || {};
+
+              return {
+                  name:
+                      contractor.company_name ||
+                      contractor.name ||
+                      "Contractor",
+
+                  role:
+                      contractor.specialization ||
+                      "Contractor"
+              };
+          })
+      ];
 
 
       if (!members.length) {
@@ -538,34 +606,11 @@
       container.innerHTML =
           members
               .slice(0, 6)
-              .map(assignment => {
+              .map(member => {
 
-                  const employee =
-                      assignment.employee || {};
+                  const name = member.name;
 
-
-                  const employeeFirstName =
-                      employee.first_name || "";
-
-                  const employeeLastName =
-                      employee.last_name || "";
-
-
-                  const name =
-                      assignment.employee_name ||
-                      employee.name ||
-                      employee.full_name ||
-                      `${employeeFirstName} ${employeeLastName}`.trim() ||
-                      "Team member";
-
-
-                  const role =
-                      assignment.role_on_project ||
-                      employee.position ||
-                      employee.job_title ||
-                      employee.role ||
-                      "Team member";
-
+                  const role = member.role;
 
                   const initials =
                       name
@@ -1010,7 +1055,8 @@
             ordersData,
             docs,
             budgetData,
-            employeesData
+            employeesData,
+            contractorsData
         ] = await Promise.all([
 
             request(
@@ -1034,6 +1080,9 @@
             ),
             request(
                 `projects/${id}/employees/`
+            ),
+            request(
+                `projects/${id}/contractors/`
             )
         ]);
 
@@ -1047,6 +1096,8 @@
         changeOrders = result(ordersData);
 
         projectEmployees = result(employeesData);
+
+        projectContractors = result(contractorsData);
 
 
         /* =====================================================
@@ -1124,11 +1175,25 @@
 
         if (projectMeta) {
 
+            const metaClient =
+                clients.find(
+                    client =>
+                        client.id ===
+                        project.buyer_id
+                );
+
             projectMeta.textContent =
                 [
                     project.code,
                     project.location,
-                    label(project.project_type)
+                    label(project.project_type),
+                    metaClient
+                        ? `Client: ${
+                            metaClient
+                                .company_name ||
+                            metaClient.name
+                        }`
+                        : null
                 ]
                     .filter(Boolean)
                     .join(" · ") ||
@@ -1861,6 +1926,7 @@
 
 
                     const filePath =
+                        document.file_url ||
                         document.file_path ||
                         document.file ||
                         "#";
@@ -1932,6 +1998,31 @@
 
 
         refreshIcons();
+    }
+
+
+    /* =========================================================
+       Load clients (for the project client/buyer picker)
+       ========================================================= */
+
+    async function loadClients() {
+
+        try {
+
+            const data = await request(
+                "/api/clients/clients/",
+                {},
+                true
+            );
+
+            clients = Array.isArray(data)
+                ? data
+                : data?.results || [];
+        }
+        catch (exception) {
+
+            clients = [];
+        }
     }
 
 
@@ -2076,6 +2167,59 @@
                             >
                                 Multi Unit
                             </option>
+
+                        </select>
+
+                    </label>
+                    `
+
+                    +
+
+                    `
+                    <label>
+                        Client (buyer)
+
+                        <select
+                            name="buyer_id"
+                        >
+
+                            <option
+                                value=""
+                                ${
+                                    !project.buyer_id
+                                        ? "selected"
+                                        : ""
+                                }
+                            >
+                                No client
+                            </option>
+
+                            ${
+                                clients
+                                    .map(
+                                        client => `
+
+                                            <option
+                                                value="${esc(
+                                                    client.id
+                                                )}"
+                                                ${
+                                                    project.buyer_id ===
+                                                    client.id
+                                                        ? "selected"
+                                                        : ""
+                                                }
+                                            >
+                                                ${esc(
+                                                    client.company_name ||
+                                                    client.name
+                                                )}
+                                            </option>
+
+                                        `
+                                    )
+                                    .join("")
+                            }
 
                         </select>
 
@@ -3206,6 +3350,49 @@
             form.dataset.orderId =
                 order.id;
         }
+
+
+        else if (
+            action ===
+            "upload-document"
+        ) {
+
+            fields({
+
+                title:
+                    "Upload document",
+
+                action,
+
+                submit:
+                    "Upload",
+
+                html:
+
+                    `
+                        <label>
+                            File
+
+                            <input
+                                name="file"
+                                type="file"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            Document type
+
+                            <input
+                                name="document_type"
+                                type="text"
+                                placeholder=
+                                    "e.g. Contract, Drawing, Invoice"
+                            >
+                        </label>
+                    `
+            });
+        }
     }
 
 
@@ -3219,7 +3406,10 @@
 
             try {
 
-                await load();
+                await Promise.all([
+                    load(),
+                    loadClients()
+                ]);
 
             } catch (error) {
 
@@ -3366,6 +3556,10 @@
                         action ===
                         "upload-document"
                     ) {
+
+                        open(
+                            "upload-document"
+                        );
 
                         return;
                     }
@@ -3781,7 +3975,20 @@
                             if (
                                 data[key] === ""
                             ) {
-                                delete data[key];
+                                // "No client" in the project dialog means
+                                // explicitly clear the buyer, so send null
+                                // rather than dropping the pairing entirely.
+                                if (
+                                    key ===
+                                    "buyer_id"
+                                ) {
+                                    data[key] =
+                                        null;
+                                } else {
+                                    delete data[
+                                        key
+                                    ];
+                                }
                             }
                         });
 
@@ -3794,6 +4001,75 @@
 
                     const action =
                         form.dataset.action;
+
+
+                    /* -----------------------------------------
+                       Document upload
+                       ----------------------------------------- */
+
+                    if (
+                        action ===
+                        "upload-document"
+                    ) {
+
+                        const body =
+                            new FormData(
+                                form
+                            );
+
+
+                        body.append(
+                            "entity_type",
+                            "project"
+                        );
+
+                        body.append(
+                            "entity_id",
+                            id
+                        );
+
+
+                        submit.disabled =
+                            true;
+
+                        error.textContent =
+                            "";
+
+
+                        try {
+
+                            await request(
+                                "/api/documents/documents/",
+                                {
+                                    method:
+                                        "POST",
+                                    body
+                                }
+                            );
+
+
+                            dialog.close();
+
+                            form.reset();
+
+                            await load();
+
+                        }
+
+                        catch (exception) {
+
+                            error.textContent =
+                                exception.message;
+                        }
+
+                        finally {
+
+                            submit.disabled =
+                                false;
+                        }
+
+                        return;
+                    }
 
 
                     /* -----------------------------------------

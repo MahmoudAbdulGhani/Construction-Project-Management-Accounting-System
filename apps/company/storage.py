@@ -6,10 +6,14 @@ object endpoint and returns the stable public URL (``.../object/public/...``)
 that the rest of the app displays.
 
 Config comes from settings (``SUPABASE_URL``, ``SUPABASE_ANON_KEY``,
-``SUPABASE_LOGO_BUCKET``), themselves read from ``.env``. If the credentials
-are not configured, uploading raises ``SupabaseStorageError`` so the caller
-can surface a friendly error instead of silently storing a bare filename
-(the previous behaviour).
+``SUPABASE_SERVICE_ROLE_KEY``, ``SUPABASE_LOGO_BUCKET``), themselves read
+from ``.env``. ``upload_logo`` authenticates with the service role key when
+one is configured -- it bypasses the bucket's storage RLS policies, so no
+public INSERT policy is required -- and falls back to the anon public key
+otherwise. If neither set of credentials is available, uploading raises
+``SupabaseStorageError`` so the caller can surface a friendly error instead
+of silently storing a bare filename (the previous behaviour). The service
+role key is used server-side only and must never be exposed client-side.
 """
 import io
 import urllib.error
@@ -38,10 +42,11 @@ def upload_logo(uploaded_file):
     """
     bucket = settings.SUPABASE_LOGO_BUCKET
     base = settings.SUPABASE_URL
-    key = settings.SUPABASE_ANON_KEY
+    key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY
     if not base or not key:
         raise SupabaseStorageError(
-            "Supabase Storage is not configured (missing SUPABASE_URL / SUPABASE_ANON_KEY)."
+            "Supabase Storage is not configured "
+            "(missing SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY)."
         )
 
     ext = ""

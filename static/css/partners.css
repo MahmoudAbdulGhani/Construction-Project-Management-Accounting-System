@@ -7,6 +7,29 @@
 
 .quiet-button.active{background:#08736c;border-color:#08736c;color:#f5fffc;font-weight:800}
 
+.row-click{cursor:pointer}
+
+.employee-dialog{border:0;padding:0;background:transparent;width:min(940px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;margin:auto}
+.employee-dialog::backdrop{background:#13231cb5}
+.employee-dialog-shell{background:var(--panel);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px #0d1f1ab5}
+.employee-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:22px 26px;color:#f5fffc;background:linear-gradient(175deg,#074e4b 0%,#087168 58%,#07534f 100%)}
+.employee-dialog-head h2{font-size:22px;letter-spacing:-.01em;margin:2px 0 0;color:#f5fffc}
+.employee-dialog-head p{color:#d7e5e0;font-size:12px;margin-top:2px}
+.employee-dialog-head .eyebrow{color:#ffd98a !important;margin:0}
+.employee-dialog-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.employee-dialog-actions .status{background:#f5fffc20;border-color:#f5fffc55;color:#f5fffc}
+.employee-close{background:#ffffff1f;border:1px solid #ffffff38;color:#f5fffc;width:32px;height:32px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.employee-close:hover{background:#ffffff36}
+.employee-dialog-shell .module-table{margin:20px 26px}
+.employee-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px 24px}
+.employee-fields div{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#fbfcfb}
+.employee-fields span{font-size:10.5px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+.employee-fields strong{font-size:13.5px;color:var(--ink);word-break:break-word}
+.employee-inline-message{padding:22px 24px;color:var(--muted);font-size:13px}
+.employee-inline-message strong{display:block;color:var(--ink);margin-bottom:3px}
+.employee-loading{padding:22px 24px;color:var(--muted);font-size:13px}
+@media(max-width:700px){.employee-dialog-head{flex-direction:column}.employee-fields{grid-template-columns:1fr;padding:14px}.employee-dialog-shell .module-table{margin:14px}}
+
 .partner-type{display:inline-block;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink);background:#f2f6f3;font-size:11px;font-weight:700;letter-spacing:.02em}
 
 .partner-balance{font-variant-numeric:tabular-nums;white-space:nowrap}

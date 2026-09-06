@@ -46,7 +46,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (element) element.innerHTML = `<i data-lucide="${name}"></i>`;
   };
 
-  icon(document.querySelector(".brand-mark"), "hard-hat");
+  const brandMark = document.querySelector(".brand-mark");
+  // Only inject the fallback icon when the sidebar has no uploaded logo
+  // image, otherwise the JS would clobber the real logo on every load.
+  if (brandMark && !brandMark.querySelector("img")) icon(brandMark, "hard-hat");
   icon(document.querySelector(".menu-button"), "menu");
   icon(document.querySelector(".icon-button"), "bell");
 
