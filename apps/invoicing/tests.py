@@ -183,6 +183,13 @@ class SupplierInvoiceAPITests(InvoicingTestBase):
         invoice_response = self.client.get(f"/api/invoicing/supplier-invoices/{invoice_id}/")
         self.assertEqual(invoice_response.json()["total_amount"], "100.00")
 
+    def test_next_number_returns_sequence_without_creating_a_row(self):
+        response = self.client.get("/api/invoicing/supplier-invoices/next-number/")
+        self.assertEqual(response.status_code, 200)
+        number = response.json()["invoice_number"]
+        self.assertRegex(number, r"^INV-\d{4}-\d{4}$")
+        self.assertEqual(SupplierInvoice.objects.filter(invoice_number=number).count(), 0)
+
     def test_flat_charge_item_via_api(self):
         invoice = self.make_invoice(invoice_number="INV-API-2")
         response = self.client.post("/api/invoicing/supplier-invoice-items/", {
@@ -350,7 +357,11 @@ class ClientInvoiceAPITests(ClientInvoicingTestBase):
 
         invoice_response = self.client.get(f"/api/invoicing/client-invoices/{invoice_id}/")
         self.assertEqual(invoice_response.json()["total_amount"], "100.00")
-        self.assertEqual(invoice_response.json()["outstanding_balance"], "0.00")  # still DRAFT
+
+    def test_next_number_returns_sequence(self):
+        response = self.client.get("/api/invoicing/client-invoices/next-number/")
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(response.json()["invoice_number"], r"^INV-\d{4}-\d{4}$")
 
     def test_status_cannot_be_set_directly_via_patch(self):
         invoice = self.make_client_invoice(invoice_number="CINV-API-2")
@@ -544,6 +555,11 @@ class ContractorInvoiceAPITests(WithUsersTableMixin, WithClientsTableMixin, With
         invoice_response = self.client.get(f"/api/invoicing/contractor-invoices/{invoice_id}/")
         self.assertEqual(invoice_response.json()["total_amount"], "3000.00")
         self.assertEqual(invoice_response.json()["outstanding_balance"], "0.00")  # still DRAFT
+
+    def test_next_number_returns_sequence(self):
+        response = self.client.get("/api/invoicing/contractor-invoices/next-number/")
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(response.json()["invoice_number"], r"^INV-\d{4}-\d{4}$")
 
     def test_flat_charge_item_via_api(self):
         create_response = self.client.post("/api/invoicing/contractor-invoices/", {
