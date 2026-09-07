@@ -1,314 +1,401 @@
-# End-to-End Manual QA
+# End-to-End Project Workflow — Manual Test Walkthrough
 
-Manual walkthrough of the full project flow — every major module plus the
-accounting/GL integration (including the Accounting dialog fixes from
-2026-09-07). Run it top to bottom in a scratch workspace; do not run against
-your live/production database unless you are prepared to create test records.
+A single story you can follow start-to-finish to test the whole system like a
+real user. Same as real life: build the project, buy materials, get the client
+to pay, and watch the accounting book itself.
 
-## Prerequisites
+**Scenario: "Downtown Fit-out"**
+A fit-out project for a client, using one supplier and one contractor. All the
+numbers below were chosen so the GL (general ledger) checks out exactly at the
+end.
+
+## Before you start
 
 - Server running: `python manage.py runserver`
-- Migrations applied (Supabase or local SQLite) — `python manage.py migrate`
-- Logged in as an **Owner** account (sidebar shows the "Workspace" + "Operations"
-  groups). If you only have an Accountant role, Owner-only modules
-  (Projects, Approvals, Clients & partners, Suppliers, Procurement, Inventory,
-  Workforce, Documents, Settings) will not be reachable.
-- The chart of accounts is **seeded by migration `0002`** — the 7 default
-  accounts must exist:
-  `1000 Cash`, `1100 Accounts Receivable`, `2000 Accounts Payable`,
-  `2100 Tax Payable`, `4000 Construction Revenue`, `5000 Cost of Construction`,
-  `6000 General Operating Expenses`.
+- Migrations applied (`python manage.py migrate`)
+- Logged in as an **Owner** account (so all sidebar sections are visible).
+- The Accounting page must show the 7 seeded accounts (they are created
+  automatically by migration `0002`).
 
-Suggested login test account:
-
-```powershell
-python manage.py createsuperuser   # or use an existing Owner account
-```
-
-## Time budget
-
-About 30–45 minutes if you type slowly. The first two sections are the most
-important (recent work). Section C is a fast page-by-page smoke.
+> Tip: use the sidebar to jump between sections. Each step below says which
+> sidebar item to open.
 
 ---
 
-## A. Accounting page (highest priority — recent bug fix)
+## Phase 1 — The basics (registration, setup)
 
-URL: `/accounting/`
+### Step 1 · Company profile
 
-> These steps verify the bugs reported on 2026-09-07 (dead "New journal entry"
-> button, "Cannot post a financial transaction with no lines", edit throwing
-> `cloneNode` null, and the form not appearing as a popup).
+**Sidebar → Settings**
 
-### A1. Page loads with seeded accounts
+Set your company name/logo/address. This is the company that appears on
+invoices later.
 
-1. Open `/accounting/`.
-2. Confirm the chart-of-accounts table lists the 7 seeded accounts.
+**You should see:** the profile form saves and the sidebar shows your logo/name.
 
-☐ Expected: page renders; all 7 seed accounts present; no JS errors in the
-browser console (`F12`).
+### Step 2 · Client
 
-### A2. "New journal entry" opens a popup
+**Sidebar → Clients & partners**
 
-1. Click **+ New journal entry**.
-2. Confirm a **modal popup** appears (centered dialog with backdrop).
+Create a client:
 
-☐ Expected: popup opens with an empty header form and **two empty line rows**.
-☐ Expected: balance bar shows `Debit $0.00 / Credit $0.00 / Balanced`.
-
-### A3. Add and remove lines
-
-1. In the popup, click **＋ Add line** → a third empty row appears.
-2. Click the **×** on that row → it disappears again.
-
-☐ Expected: rows append/remove without errors; balance bar updates.
-
-### A4. Unbalanced entry → friendly in-dialog error (no native alert)
-
-1. Header: Transaction number `QA-MANUAL-1`, a date, description
-   `QA manual unbalanced entry`.
-2. Line 1: Account `1000 Cash`, Debit `111.11`. Leave credit empty.
-3. Click **Save & post**.
-
-☐ Expected: the **popup stays open**, an error message shows inside the dialog
-(e.g. totals-out-of-balance) — a styled error, **not** a browser `alert()`.
-☐ Expected: nothing was saved — the backend must refuse to post unbalanced.
-
-### A5. Balanced entry posts
-
-1. Line 2: Account `6000 General Operating Expenses`, Credit `111.11`.
-2. Balance bar now shows `Debit $111.11 / Credit $111.11 / Balanced`.
-3. Click **Save & post**.
-
-☐ Expected: popup closes; a draft transaction appears in the Transactions table
-with status `POSTED`, Source `Manual`, and the header reference/description you
-entered.
-
-### A6. Create, edit, and re-post a draft (the cloneNode regression)
-
-1. Click **+ New journal entry** again; fill header (Transaction number
-   `QA-MANUAL-2`, date, description).
-2. Add one line: `1000 Cash` Debit `22.22`; add a second line: `6000` Credit
-   `22.22`. Click **Save draft** (not post).
-3. Confirm the row appears with status `DRAFT`.
-4. Click **Edit** on that draft row.
-
-☐ Expected: the **popup reopens fully populated** — header fields AND both line
-rows loaded (this is the `cloneNode` regression — it previously threw
-`Cannot read properties of null (reading 'cloneNode')` and showed a native alert
-instead of a popup).
-5. Change the Debit on line 1 to `33.33` and the Credit on line 2 to `33.33`.
-6. Click **Save & post**.
-
-☐ Expected: the draft is posted; totals are `33.33` on both sides.
-
-### A7. System entries are read-only with a Source
-
-Trigger an automatic entry (see Section B) and come back to `/accounting/`.
-
-1. Reload `/accounting/`.
-2. Click the row of an auto-generated entry (e.g. from an expense/invoice).
-
-☐ Expected: the detail dialog shows a **Source** field identifying the origin
-(e.g. `Expense #…`, `Client Invoice #…`, `Payment #…`).
-☐ Expected: auto/system entries have **no Edit/Post/Delete actions** (view-only).
-
-### A8. Posting fails cleanly when a line has no amount
-
-Create a draft, leave the header filled but keep all line blanks, and try to
-post it.
-
-☐ Expected: refused with a clear message ("at least one line" / no-lines error)
-— never a `500`, and never a silent no-op.
-
----
-
-## B. Full business loop → auto GL journal entries
-
-This is the CPMAS-34/35 integration: real transactions post automatic,
-balanced journal entries.
-
-Distinct amount convention (so you can find your entries later):
-
-| Module | Amount |
+| Field | Value |
 | --- | --- |
-| Expense | `50.00` |
-| Supplier invoice | `1,200.00` (tax `120.00`) |
-| Client invoice | `5,000.00` (tax `500.00`) |
+| Name | `Al Manar Trading LLC` |
+| Phone | `+971 50 111 2222` |
+| Email | `accounts@almanar.ae` |
+| Address | `Deira, Dubai` |
 
-### B1. Partners: a client
+**You should see:** the client appears in the list.
 
-1. `/partners/` → add a client `QA Client Co`.
-2. `/suppliers/` → add a supplier `QA Supply Co`.
-3. `/contractors/` → add a contractor `QA Build Ltd`.
+### Step 3 · Supplier
 
-☐ Expected: each list page shows the record after saving. (Navigation: use the
-sidebar "+" or the New button on each page.)
+**Sidebar → Suppliers**
 
-### B2. Project
+Create a supplier:
 
-1. `/projects/` → **New project** `QA Tower`, with the above client as owner.
-2. Open the project detail (click it) — it shows overview/phases/budget tabs.
-
-☐ Expected: project appears; detail page renders without errors.
-
-### B3. Expense (paid) → expense auto journal
-
-1. `/expenses/` → **New expense** on `QA Tower`: category (create one if empty,
-   e.g. `Travel`, and link the category's default account = `6000`), amount
-   `50.00`, date today.
-2. Mark the expense **Paid**.
-
-☐ Expected: a journal entry appears in `/accounting/` with the inspected
-amounts: Debit `6000 General Operating Expenses` and Credit `1000 Cash`,
-`50.00` each, Source = the expense, and the expense's unlinked category would
-raise an error if a category has **no** account (test one unlinked category in
-B5).
-
-### B4. Supplier invoice (sent) → payable auto journal
-
-1. `/invoices/` → new **Supplier invoice** for `QA Supply Co` on `QA Tower`:
-   line(s) `1,200.00` + tax `120.00`.
-2. Approve and mark the invoice **Sent**.
-
-☐ Expected: in `/accounting/`, an entry books `5000 Cost of Construction` Debit
-`1,320.00` (`1,200 + 120` VAT in) and `2000 Accounts Payable` Credit
-`1,320.00`, Source = the supplier invoice.
-
-### B5. Unlinked expense category raises instead of booking
-
-Create an expense category **without** a default account, then mark an expense
-in it Paid.
-
-☐ Expected: posting is refused with an error naming the unlinked category —
-never a silent omission.
-
-### B6. Client invoice (sent) → receivable auto journal
-
-1. `/invoices/` → new **Client invoice** to `QA Client Co` on `QA Tower`:
-   `5,000.00` + tax `500.00`.
-2. Mark it **Sent**.
-
-☐ Expected: in `/accounting/`, an entry books `1100 Accounts Receivable` Debit
-`5,500.00`, `4000 Construction Revenue` Credit `5,000.00`, `2100 Tax Payable`
-Credit `500.00`, Source = the client invoice.
-
-### B7. Payment against the supplier invoice (outgoing) → rebook
-
-1. `/payments/` → **New payment** for `QA Supply Co`: type **Outgoing**, amount
-   `1,320.00`, allocate it 100% to the supplier invoice from B4. Save.
-
-☐ Expected: in `/accounting/` a new entry appears (or the previous one is
-replaced per the re-allocation rule): Debit `2000 Accounts Payable`
-`1,320.00` and Credit `1000 Cash` `1,320.00`, Source = the payment.
-☐ Expected: exactly **one** live journal entry exists for that payment — repeat
-the allocation a second time and confirm the previous entry was voided and
-rebooked (no duplicates).
-
-### B8. Receipt from the client → never books
-
-1. `/payments/` → **New receipt** from `QA Client Co`: type **Incoming**
-   (receipt), `500.00`.
-
-☐ Expected: **no** journal entry is created in `/accounting/` for the receipt —
-receipts never book automatically.
-
-### B9. Contractor invoice smoke
-
-Optional (equipment/contractor path): create a contractor invoice on `QA Tower`
-and mark it Sent.
-
-☐ Expected: an entry on the books similar to B4 (DR `5000` / CR `2000`) with
-Source = the contractor invoice.
-
----
-
-## C. Broad page smoke (every module)
-
-Open each URL logged-in as Owner and check it renders without errors; then
-exercise the primary list action (New → save → item appears).
-
-| # | Module | URL | Smoke check |
-| --- | --- | --- | --- |
-| 1 | Overview | `/dashboard/` | Cards/stats render; recent activity loads |
-| 2 | Projects | `/projects/` | List renders; detail opens |
-| 3 | Approvals | `/approvals/` | Pending approvals panel loads |
-| 4 | Clients & partners | `/partners/` | Client from B1 listed |
-| 5 | Suppliers | `/suppliers/` | Supplier from B1 listed |
-| 6 | Procurement | `/procurement/` | PO list renders; New PO dialog opens |
-| 7 | Inventory | `/inventory/` | Materials/warehouses/stock tabs render |
-| 8 | Workforce | `/workforce/` | Employees/attendance tabs render |
-| 9 | Documents | `/documents/` | List loads |
-| 10 | Invoices | `/invoices/` | Invoices from B4/B6 listed |
-| 11 | Payments | `/payments/` | Payment/receipt from B7/B8 listed |
-| 12 | Accounting | `/accounting/` | Section A + B entries visible |
-| 13 | Receipts | `/receipts/` | Page loads |
-| 14 | Expenses | `/expenses/` | Expense from B3 listed |
-| 15 | Reports | `/reports/` | Tabs render; open a Trial Balance / General Ledger for an account — totals match Section B |
-| 16 | Settings | `/settings/` | Company profile form loads |
-| 17 | Profile | `/profile/` | Own profile loads |
-| 18 | Audit trail (API) | `/api/audit/audit-logs/` | Read-only log lists the actions from A & B |
-
-For each:
-
-☐ Page renders (no 500s in the console/network tab).
-☐ Primary New/＋ action works.
-☐ Sidebar highlights the current module.
-
-Note: `workforce` has a **known pre-existing test failure** in `core.tests`
-(`data-workforce-*` vs `data-employee-rows`) — it still renders fine in the
-browser; the failing unit is unrelated to page rendering.
-
----
-
-## D. API smoke (authenticated)
-
-Log in and confirm the main resources respond (list = 200, empty list OK).
-You can use the DRF browsable API or a REST client with the session cookie.
-
-| Endpoint | Expected |
+| Field | Value |
 | --- | --- |
-| `GET /api/accounting/accounts/` | 200, 7 seeded accounts |
-| `GET /api/accounting/financial-transactions/` | 200, entries from A & B |
-| `GET /api/accounting/transaction-lines/` | 200, balanced lines |
-| `GET /api/accounting/reports/profit-loss/` | 200 (P&L summary) |
-| `GET /api/accounting/reports/trend/` | 200 (balances trend) |
-| `GET /api/projects/projects/` | 200, `QA Tower` |
-| `GET /api/clients/clients/` | 200 |
-| `GET /api/suppliers/suppliers/` | 200 |
-| `GET /api/contractors/contractors/` | 200 |
-| `GET /api/expenses/expenses/` | 200 |
-| `GET /api/invoicing/supplier-invoices/` | 200 |
-| `GET /api/invoicing/client-invoices/` | 200 |
-| `GET /api/payments/payments/` | 200 |
-| `GET /api/payments/receipts/` | 200 |
-| `GET /api/inventory/materials/` | 200 |
-| `GET /api/purchasing/purchase-orders/` | 200 |
-| `GET /api/employees/` | 200 |
-| `GET /api/audit/audit-logs/` | 200, read-only |
-| `GET /api/company/` | 200, company profile |
-| `GET /api/auth/me/` | 200, current user |
+| Name | `Gulf Building Materials` |
+| Phone | `+971 4 333 4444` |
+| Email | `sales@gulfbm.com` |
+
+**You should see:** the supplier appears in the list.
+
+### Step 4 · Contractor
+
+**Sidebar → Contractors** (also accessible under Clients & partners)
+
+Create a contractor:
+
+| Field | Value |
+| --- | --- |
+| Name | `Skyline Interiors LLC` |
+| Contact | `Eng. Omar Mahmoud` |
+
+**You should see:** the contractor appears in the list.
 
 ---
 
-## E. Regression checklist (things that used to break)
+## Phase 2 — The project
 
-Done these after clearing the browser cache / hard refresh (`Ctrl+F5`):
+### Step 5 · Create the project
 
-- [ ] New journal entry button always opens the modal popup (was: dead button).
-- [ ] Posting a balanced entry works (was: `Cannot post a financial transaction
-      with no lines`).
-- [ ] Editing a draft loads its lines (was: `Cannot read properties of null
-      (reading 'cloneNode')`).
-- [ ] Posting an unbalanced/invalid entry shows a styled in-dialog error (was:
-      native `alert` / nothing visible).
-- [ ] The accounting script loads with the cache-buster
-      (`accounting.js?v=20260907-dialog`).
-- [ ] System (auto) entries are view-only with a Source label.
+**Sidebar → Projects → New project**
 
-## Cleanup (if you care)
+| Field | Value |
+| --- | --- |
+| Name | `Downtown Fit-out` |
+| Code | `FIT-2026` |
+| Client | `Al Manar Trading LLC` |
+| Budget | `120000.00` |
+| Start date | today |
+| End date | today + 90 days |
 
-Delete the QA records via the UI, or reset a local dev database:
+**You should see:** the project appears in the list. Click it → the detail page
+shows overview/phases/budget tabs. Add one phase:
+
+| Field | Value |
+| --- | --- |
+| Phase name | `Interior fit-out works` |
+| Budget | `120000.00` |
+
+---
+
+## Phase 3 · Workforce
+
+### Step 6 · Employee
+
+**Sidebar → Workforce → Employees**
+
+Create an employee:
+
+| Field | Value |
+| --- | --- |
+| Name | `Ahmed Hassan` |
+| Role | `Foreman` |
+| Phone | `+971 55 000 1111` |
+
+**You should see:** the employee listed; the attendance/daily-labor tabs load.
+
+---
+
+## Phase 4 · Materials & purchase order (procurement / inventory)
+
+Pretend we need ceiling tiles for the fit-out.
+
+### Step 7 · Material catalog + warehouse
+
+**Sidebar → Inventory**
+
+1. Create a material category: name `Ceiling Materials`.
+2. Create a material: name `Suspended Ceiling Tile`, unit `m²`, price `40.00`,
+   category `Ceiling Materials`.
+3. Create a warehouse: name `Main Warehouse`.
+
+**You should see:** tile is listed with its unit price; warehouse is listed.
+
+### Step 8 · Purchase order to the supplier
+
+**Sidebar → Procurement → New purchase order**
+
+| Field | Value |
+| --- | --- |
+| Supplier | `Gulf Building Materials` |
+| Project | `Downtown Fit-out` |
+| Line: material | `Suspended Ceiling Tile` |
+| Line: quantity | `200` |
+| Line: price | `40.00` |
+
+**You should see:** PO total = `8,000.00`. Save it.
+
+### Step 9 · Receive the goods → stock in
+
+On the PO row, do the **Receipt/Receive goods** action for `200 m²` of tiles.
+
+**You should see:** a goods receipt is created and **Stock** for
+`Suspended Ceiling Tile` in `Main Warehouse` increases to `200`.
+
+---
+
+## Phase 5 · Day-to-day expenses
+
+### Step 10 · Expense for the site visit
+
+**Sidebar → Expenses**
+
+1. **Create the category first** — the Expenses page has no button for this;
+   categories live in Django Admin:
+
+   > Open `/admin/expenses/expensecategory/add/` in a new tab and log in with
+   > the superuser you created (`python manage.py createsuperuser`). Create:
+   >
+   > | Field | Value |
+   > | --- | --- |
+   > | Name | `Travel` |
+   > | Account | `6000 General Operating Expenses` (autocomplete) |
+   > | Description | `Site visits and transport` |
+   >
+   > (Alternative: `POST /api/expenses/expense-categories/` with
+   > `{"name": "Travel", "account": "<id of account 6000>"}`.)
+   >
+   > This `account` link is what lets the expense auto-post to the books.
+
+2. New expense:
+
+| Field | Value |
+| --- | --- |
+| Category | `Travel` |
+| Project | `Downtown Fit-out` |
+| Description | `Site transport` |
+| Amount | `150.00` |
+| Date | today |
+
+3. Mark the expense **Paid**.
+
+**You should see:** nothing on this page, but — jump to Sidebar → **Accounting**:
+
+A journal entry appeared, Source = the expense:
+- Debit `6000 General Operating Expenses` **150.00**
+- Credit `1000 Cash` **150.00**
+
+> This is the automatic GL booking (CPMAS-35). The expense didn't ask you for
+> accounts — the category's account did it.
+
+---
+
+## Phase 6 · Buying materials (supplier invoice)
+
+### Step 11 · Supplier invoice
+
+**Sidebar → Invoices → New supplier invoice**
+
+| Field | Value |
+| --- | --- |
+| Supplier | `Gulf Building Materials` |
+| Project | `Downtown Fit-out` |
+| Line: item | `Suspended Ceiling Tiles` |
+| Line: amount | `8000.00` |
+| Tax (5%) | `400.00` |
+
+Mark/approve it and set status **Sent**.
+
+**You should see in Accounting:**
+- Debit `5000 Cost of Construction` **8,400.00**
+- Credit `2000 Accounts Payable` **8,400.00**  (8,000 + 400 tax)
+
+Source = the supplier invoice.
+
+---
+
+## Phase 7 · Billing the client (client invoice)
+
+### Step 12 · Client invoice
+
+**Sidebar → Invoices → New client invoice**
+
+| Field | Value |
+| --- | --- |
+| Client | `Al Manar Trading LLC` |
+| Project | `Downtown Fit-out` |
+| Line: item | `Fit-out progress 1` |
+| Line: amount | `20000.00` |
+| Tax (5%) | `1000.00` |
+
+Set status **Sent**.
+
+**You should see in Accounting:**
+- Debit `1100 Accounts Receivable` **21,000.00**
+- Credit `4000 Construction Revenue` **20,000.00**
+- Credit `2100 Tax Payable` **1,000.00**
+
+Source = the client invoice. (The tax payable is your VAT owed on the sale.)
+
+### Step 13 · Contractor invoice (finishing works)
+
+**Sidebar → Invoices → New contractor invoice**
+
+| Field | Value |
+| --- | --- |
+| Contractor | `Skyline Interiors LLC` |
+| Project | `Downtown Fit-out` |
+| Line: item | `Finishing works` |
+| Line: amount | `12000.00` |
+| Tax (5%) | `600.00` |
+
+Set status **Sent**.
+
+**You should see in Accounting:**
+- Debit `5000 Cost of Construction` **12,600.00**
+- Credit `2000 Accounts Payable` **12,600.00**
+
+---
+
+## Phase 8 · Money moving (payments & receipts)
+
+### Step 14 · Pay the supplier (partially)
+
+**Sidebar → Payments → New payment**
+
+| Field | Value |
+| --- | --- |
+| Type | Outgoing |
+| Pay to | `Gulf Building Materials` |
+| Method | `Bank transfer` |
+| Amount | `4200.00` |
+| Allocate to | the supplier invoice (8,400) — `4,200.00` (half) |
+
+Save.
+
+**You should see in Accounting:** the supplier-invoice entry now has a matching
+payment entry:
+- Debit `2000 Accounts Payable` **4,200.00**
+- Credit `1000 Cash` **4,200.00**
+
+Source = the payment, and it points to the invoice's project.
+
+> If you allocate again to the same invoice, the old payment entry is voided and
+> rebooked — never two live books entries for one payment.
+
+### Step 15 · Client pays you (receipt)
+
+**Sidebar → Payments → New payment**
+
+| Field | Value |
+| --- | --- |
+| Type | Incoming (receipt) |
+| From | `Al Manar Trading LLC` |
+| Method | `Bank transfer` |
+| Amount | `10500.00` (half of the 21,000 invoice) |
+
+Save.
+
+**You should see in Accounting:** **no** journal entry appears for the receipt —
+receipts don't post automatically (books entry happens when you later allocate).
+
+---
+
+## Phase 9 · Manual accounting work (journal entry)
+
+### Step 16 · A manual journal entry (what an accountant types by hand)
+
+**Sidebar → Accounting → New journal entry**
+
+- Header: number `JRN-001`, date today, description `Bank service charges`.
+- Line 1: account `6000 General Operating Expenses`, Debit `25.00`
+- Line 2: account `1000 Cash`, Credit `25.00`
+- Balance bar shows `Balance: Balanced` → **Save & post**.
+
+**You should see:** the popup closes and the entry shows with status
+`POSTED`, Source `Manual`.
+
+> This is also the page that was fixed recently — the dialog always opens, lines
+> add/remove, unpaid entries get a styled error instead of a browser alert, and
+> drafts can be edited and re-posted.
+
+---
+
+## Phase 10 · The end result — reports
+
+### Step 17 · Check the general ledger
+
+**Sidebar → Accounting**
+
+You should have entries whose Sources are: the Travel expense, the supplier
+invoice, the client invoice, the contractor invoice, the payment, and Manual.
+
+### Step 18 · Financial reports
+
+**Sidebar → Reports**
+
+Open the **Profit & Loss** (and/or ledger). It should match exactly:
+
+| Account | Balance |
+| --- | --- |
+| `4000 Construction Revenue` | Credit **20,000.00** |
+| `5000 Cost of Construction` | Debit **21,000.00** (8,400 + 12,600) |
+| `6000 General Operating Expenses` | Debit **175.00** (150 + 25) |
+
+Balances sheet side:
+
+| Account | Balance |
+| --- | --- |
+| `1000 Cash` | Credit **4,375.00** (150 + 4,200 + 25) |
+| `1100 Accounts Receivable` | Debit **21,000.00** |
+| `2000 Accounts Payable` | Credit **16,800.00** (8,400 + 12,600 − 4,200 paid) |
+| `2100 Tax Payable` | Credit **1,000.00** |
+
+Total debits = 21,000 + 21,000 + 175 = **42,175**.
+Total credits = 4,375 + 16,800 + 1,000 + 20,000 = **42,175**. Balanced ✔
+
+### Step 19 · Audit trail
+
+**Sidebar → Accounting** → for any entry, open it — you'll see who/when it was
+created. (Also available via the audit API `/api/audit/audit-logs/`.)
+
+### Step 20 · System entries are protected
+
+In Accounting, click any entry whose Source is an expense/invoice/payment (an
+automatic entry). There is **no Edit/Post/Delete** button — only review. Manual
+entries you created yourself do have actions.
+
+---
+
+## Regression check (recent Accounting fixes)
+
+After a hard refresh (`Ctrl+F5`), run these quick checks:
+
+- [ ] **New journal entry** always opens the modal popup.
+- [ ] Unbalanced entry shows a styled error **inside the dialog** (no browser
+      alert).
+- [ ] **Edit** on a draft reopens the popup with its lines loaded.
+- [ ] Posting works (no "Cannot post a financial transaction with no lines").
+- [ ] Auto/system entries are view-only and show a **Source** label.
+
+## Cleanup
+
+To remove test data afterwards, delete the records through the UI, or reset a
+local dev database:
 
 ```powershell
 python manage.py migrate accounting zero
