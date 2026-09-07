@@ -20,6 +20,7 @@ from django.db import connection
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from accounting.models import FinancialTransaction
 from clients.models import Client
 from clients.testing import WithClientsTableMixin
 from contractors.models import Contractor
@@ -280,6 +281,126 @@ class AllocatePaymentServiceTests(PaymentsTestBase):
         allocate_payment(payment, invoice, Decimal("600.00"))
         with self.assertRaises(ValidationError):
             allocate_payment(payment, invoice, Decimal("500.00"))  # only 400 left on the invoice
+
+
+class PaymentGLTests(PaymentsTestBase):
+    """CPMAS-34/Phase 3: every successful allocate_payment re-books the
+    payment's GL journal from its current allocation set.
+
+    INCOMING -> DR Cash (1000) / CR Accounts Receivable (1100) per
+    allocation; OUTGOING -> DR Accounts Payable (2000) / CR Cash (1000).
+    Each journal line carries its allocation's invoice project, the prior
+    entry becomes VOIDED on re-allocation, and an unallocated payment
+    (e.g. an employee wage run) books nothing.
+    """
+
+    def _live_entry(self, payment):
+        return FinancialTransaction.objects.get(
+            source_type=FinancialTransaction.SourceType.PAYMENT,
+            source_id=payment.id,
+            status=FinancialTransaction.Status.POSTED,
+        )
+
+    def _lines(self, payment):
+        return list(self._live_entry(payment).lines.select_related('account', 'project'))
+
+    def _summary(self, payment):
+        totals = {}
+        for line in self._lines(payment):
+            entry = totals.setdefault(line.account.code, {"debit": Decimal("0.00"), "credit": Decimal("0.00")})
+            entry["debit"] += line.debit
+            entry["credit"] += line.credit
+        return totals
+
+    def test_incoming_allocation_books_dr_cash_cr_ar(self):
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("1000.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("1000.00"))
+
+    def test_incoming_allocation_amounts_follow_the_allocation(self):
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("400.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("400.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("400.00"))
+
+    def test_outgoing_supplier_allocation_books_dr_ap_cr_cash(self):
+        invoice = self.make_supplier_invoice(total_amount=Decimal("500.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("500.00"))
+        allocate_payment(payment, invoice, Decimal("500.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["2000"]["debit"], Decimal("500.00"))
+        self.assertEqual(totals["1000"]["credit"], Decimal("500.00"))
+
+    def test_outgoing_contractor_allocation_books_dr_ap_cr_cash(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3000.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("3000.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["2000"]["debit"], Decimal("3000.00"))
+        self.assertEqual(totals["1000"]["credit"], Decimal("3000.00"))
+
+    def test_header_links_the_source_and_carries_reference_and_party(self):
+        from projects.models import Project
+
+        project = Project.objects.create(
+            code="PAY-GL-1", name="Payment GL Tower", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("50000.00"), buyer=self.client_obj,
+        )
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"), project=project)
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        entry = self._live_entry(payment)
+        self.assertEqual(entry.description, "Payment: PMT-0001")
+        self.assertEqual(entry.source_type, FinancialTransaction.SourceType.PAYMENT)
+        self.assertEqual(entry.project, None)
+        self.assertEqual(entry.client, self.client_obj)
+        self.assertEqual(entry.created_by_id, self.creator.id)
+
+    def test_lines_carry_their_allocation_invoice_project(self):
+        from projects.models import Project
+
+        project = Project.objects.create(
+            code="PAY-GL-2", name="Payment GL Tower Two", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("60000.00"), buyer=self.client_obj,
+        )
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"), project=project)
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        lines = self._lines(payment)
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertEqual(line.project_id, project.id)
+
+    def test_reallocation_voids_the_previous_entry_and_books_fresh(self):
+        invoice_a = self.make_client_invoice(invoice_number="CINV-A", total_amount=Decimal("1000.00"))
+        invoice_b = self.make_client_invoice(invoice_number="CINV-B", total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice_a, Decimal("600.00"))
+        allocate_payment(payment, invoice_b, Decimal("400.00"))
+
+        entries = FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.PAYMENT, source_id=payment.id,
+        ).order_by('created_at')
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].status, FinancialTransaction.Status.VOIDED)
+        self.assertEqual(entries[1].status, FinancialTransaction.Status.POSTED)
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("1000.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("1000.00"))
+
+    def test_unallocated_payment_books_nothing(self):
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        self.assertEqual(
+            FinancialTransaction.objects.filter(
+                source_type=FinancialTransaction.SourceType.PAYMENT, source_id=payment.id,
+            ).count(),
+            0,
+        )
 
 
 class PaymentAPITests(PaymentsTestBase):

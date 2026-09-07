@@ -13,12 +13,12 @@ Organized into:
 from decimal import Decimal
 from uuid import uuid4
 
-from django.contrib.auth.models import User as DjangoUser
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from accounting.models import FinancialTransaction
 from clients.models import Client
 from clients.testing import WithClientsTableMixin
 from contractors.models import Contractor
@@ -26,6 +26,8 @@ from inventory.models import Material, MaterialCategory
 from projects.testing import WithProjectsTableMixin
 from suppliers.models import Supplier
 from taxes.models import TaxRate
+from users.models import User
+from users.testing import WithUsersTableMixin
 
 from .models import (
     ClientInvoice,
@@ -49,14 +51,28 @@ from .services import (
 )
 
 
-class InvoicingTestBase(TestCase):
-    """Shared fixtures: a supplier, a material (for line items), a tax rate."""
+class InvoicingTestBase(WithUsersTableMixin, WithClientsTableMixin, WithProjectsTableMixin, TestCase):
+    """Shared fixtures: a supplier, a material (for line items), a tax rate.
+
+    CPMAS-34 (GL integration, Phase 2) mixes in the table-materializing
+    With*TableMixin set: a users.User is who service-level bookings are
+    attributed to, and sending an invoice creates FinancialTransaction rows
+    whose (nullable) FK columns still require those targets to exist under
+    SQLite's FK enforcement. users.User/clients.Client/projects.Project are
+    managed=False; the accounts/financial_transactions/transaction_lines
+    tables and their seed chart of accounts come from the accounting app's
+    managed migrations.
+    """
 
     def setUp(self):
         self.supplier = Supplier.objects.create(name="ACME Building Supplies")
         category = MaterialCategory.objects.create(name="Cement")
         self.material = Material.objects.create(category=category, name="Portland Cement", sku="CEM-SI-1", unit="bag")
         self.tax = TaxRate.objects.create(name="VAT 15%", rate=Decimal("15.0000"), tax_type="VAT", effective_date="2026-01-01")
+        self.user = User.objects.create(
+            username="invoicinggl", email="invoicinggl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
 
     def make_invoice(self, **kwargs):
         defaults = dict(supplier=self.supplier, invoice_number="INV-0001", invoice_date="2026-08-31")
@@ -124,7 +140,7 @@ class RecalculateInvoiceTotalsTests(InvoicingTestBase):
 class TransitionStatusTests(InvoicingTestBase):
     def test_draft_to_sent(self):
         invoice = self.make_invoice()
-        transition_status(invoice, SupplierInvoice.Status.SENT)
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
         self.assertEqual(invoice.status, SupplierInvoice.Status.SENT)
 
     def test_cannot_skip_to_paid(self):
@@ -134,8 +150,8 @@ class TransitionStatusTests(InvoicingTestBase):
 
     def test_can_cancel_from_sent(self):
         invoice = self.make_invoice()
-        transition_status(invoice, SupplierInvoice.Status.SENT)
-        transition_status(invoice, SupplierInvoice.Status.CANCELLED)
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+        transition_status(invoice, SupplierInvoice.Status.CANCELLED, created_by=self.user)
         self.assertEqual(invoice.status, SupplierInvoice.Status.CANCELLED)
 
     def test_cannot_leave_cancelled(self):
@@ -148,9 +164,8 @@ class TransitionStatusTests(InvoicingTestBase):
 class SupplierInvoiceAPITests(InvoicingTestBase):
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="apitester", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def test_create_invoice_and_priced_item_computes_totals(self):
         create_response = self.client.post("/api/invoicing/supplier-invoices/", {
@@ -232,12 +247,17 @@ class SupplierInvoiceAPITests(InvoicingTestBase):
         self.assertNotEqual(second.json()["invoice_number"], number)
 
 
-class ClientInvoicingTestBase(WithClientsTableMixin, WithProjectsTableMixin, TestCase):
-    """Shared fixtures for the ClientInvoice (CPMAS-35) test classes: a client, a tax rate."""
+class ClientInvoicingTestBase(WithUsersTableMixin, WithClientsTableMixin, WithProjectsTableMixin, TestCase):
+    """Shared fixtures for the ClientInvoice (CPMAS-35) test classes: a
+    client, a tax rate, and a users.User (actor for the GL booking)."""
 
     def setUp(self):
         self.client_obj = Client.objects.create(name="Jane Homeowner")
         self.tax = TaxRate.objects.create(name="VAT 15%", rate=Decimal("15.0000"), tax_type="VAT", effective_date="2026-01-01")
+        self.user = User.objects.create(
+            username="clientinvoicinggl", email="clientinvoicinggl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
 
     def make_client_invoice(self, **kwargs):
         defaults = dict(client=self.client_obj, invoice_number="CINV-0001", invoice_date="2026-08-31")
@@ -295,7 +315,7 @@ class RecalculateClientInvoiceTotalsTests(ClientInvoicingTestBase):
 class TransitionClientInvoiceStatusTests(ClientInvoicingTestBase):
     def test_draft_to_sent(self):
         invoice = self.make_client_invoice()
-        transition_client_invoice_status(invoice, ClientInvoice.Status.SENT)
+        transition_client_invoice_status(invoice, ClientInvoice.Status.SENT, created_by=self.user)
         self.assertEqual(invoice.status, ClientInvoice.Status.SENT)
 
     def test_cannot_skip_to_paid(self):
@@ -313,9 +333,8 @@ class TransitionClientInvoiceStatusTests(ClientInvoicingTestBase):
 class ClientInvoiceAPITests(ClientInvoicingTestBase):
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="apitester2", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def test_create_invoice_and_item_computes_totals(self):
         create_response = self.client.post("/api/invoicing/client-invoices/", {
@@ -380,13 +399,20 @@ class ClientInvoiceAPITests(ClientInvoicingTestBase):
         self.assertRegex(response.json()["invoice_number"], r"^INV-2026-\d{4}$")
 
 
-class ContractorInvoiceServiceTests(TestCase):
+class ContractorInvoiceServiceTests(WithUsersTableMixin, WithClientsTableMixin, WithProjectsTableMixin, TestCase):
     """Service-level tests for ContractorInvoice -- no contractors table
-    needed because contractor_id is a plain UUID column."""
+    needed because contractor_id is a plain UUID column. The
+    table-materializing mixins are for the GL booking (users.User actor +
+    the journal header's nullable project/client FKs), same as the other
+    invoicing bases."""
 
     def setUp(self):
         self.contractor_id = uuid4()
         self.tax = TaxRate.objects.create(name="VAT 15%", rate=Decimal("15.0000"), tax_type="VAT", effective_date="2026-01-01")
+        self.user = User.objects.create(
+            username="contractorinvoicinggl", email="contractorinvoicinggl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
 
     def make_contractor_invoice(self, **kwargs):
         defaults = dict(contractor_id=self.contractor_id, invoice_number="COINV-0001", invoice_date="2026-08-31")
@@ -425,7 +451,7 @@ class ContractorInvoiceServiceTests(TestCase):
 
     def test_draft_to_sent(self):
         invoice = self.make_contractor_invoice()
-        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.SENT)
+        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.SENT, created_by=self.user)
         self.assertEqual(invoice.status, ContractorInvoice.Status.SENT)
 
     def test_cannot_skip_to_paid(self):
@@ -435,7 +461,7 @@ class ContractorInvoiceServiceTests(TestCase):
 
     def test_cannot_leave_cancelled(self):
         invoice = self.make_contractor_invoice()
-        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.CANCELLED)
+        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.CANCELLED, created_by=self.user)
         with self.assertRaises(ValidationError):
             transition_contractor_invoice_status(invoice, ContractorInvoice.Status.DRAFT)
 
@@ -457,7 +483,7 @@ class ContractorInvoiceServiceTests(TestCase):
         self.assertEqual(draft.status, ContractorInvoice.Status.DRAFT)
 
 
-class SyncOverdueStatusesTests(WithClientsTableMixin, InvoicingTestBase):
+class SyncOverdueStatusesTests(InvoicingTestBase):
     """sync_overdue_statuses is invoked from every invoice list/detail GET
     -- prove the supplier and client invoices get the same treatment."""
 
@@ -478,7 +504,7 @@ class SyncOverdueStatusesTests(WithClientsTableMixin, InvoicingTestBase):
         self.assertEqual(client_overdue.status, ClientInvoice.Status.OVERDUE)
 
 
-class ContractorInvoiceAPITests(TestCase):
+class ContractorInvoiceAPITests(WithUsersTableMixin, WithClientsTableMixin, WithProjectsTableMixin, TestCase):
     """API tests for contractor invoices. The serializer validates
     contractor_id against the (unmanaged) contractors view, so the table
     is created in the test DB just like the employee/contractor payment
@@ -495,9 +521,12 @@ class ContractorInvoiceAPITests(TestCase):
     def setUp(self):
         self.contractor = Contractor.objects.create(name="Atlas Concrete", status=Contractor.Status.ACTIVE, rate=Decimal("300.00"))
         self.tax = TaxRate.objects.create(name="VAT 15%", rate=Decimal("15.0000"), tax_type="VAT", effective_date="2026-01-01")
-        django_user = DjangoUser.objects.create_user(username="apitester3", password="pass12345")
+        self.user = User.objects.create(
+            username="contractorapigl", email="contractorapigl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def test_create_invoice_and_item_computes_totals(self):
         create_response = self.client.post("/api/invoicing/contractor-invoices/", {
@@ -588,3 +617,167 @@ class ContractorInvoiceAPITests(TestCase):
             "invoice_date": "2026-08-31",
         }, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class SupplierInvoiceGLTests(InvoicingTestBase):
+    """
+    Phase 2 (CPMAS-34): sending a supplier invoice recognizes it in the GL
+    (DR Cost of Construction 5000 / CR Accounts Payable 2000, tax included
+    in the total), and cancelling a SENT invoice voids the linked entry.
+    """
+
+    def gl_entry_for(self, invoice):
+        return FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.SUPPLIER_INVOICE,
+            source_id=invoice.id,
+        ).first()
+
+    def test_mark_sent_books_ap_and_cost(self):
+        invoice = self.make_invoice(
+            invoice_number="INV-GL-1", total_amount=Decimal("1150.00"), tax_amount=Decimal("150.00"),
+        )
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+
+        entry = self.gl_entry_for(invoice)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, FinancialTransaction.Status.POSTED)
+        self.assertEqual(entry.supplier_id, self.supplier.id)
+        self.assertEqual(entry.created_by_id, self.user.id)
+        self.assertIn(invoice.invoice_number, entry.description)
+        by_account = {line.account.code: line for line in entry.lines.all()}
+        self.assertEqual(by_account["5000"].debit, Decimal("1150.00"))
+        self.assertEqual(by_account["2000"].credit, Decimal("1150.00"))
+        self.assertEqual(
+            sum(line.debit for line in entry.lines.all()),
+            sum(line.credit for line in entry.lines.all()),
+        )
+
+    def test_zero_total_invoice_sends_without_journal_entry(self):
+        invoice = self.make_invoice(invoice_number="INV-GL-0")
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+        self.assertEqual(invoice.status, SupplierInvoice.Status.SENT)
+        self.assertIsNone(self.gl_entry_for(invoice))
+
+    def test_invoice_is_booked_exactly_once(self):
+        invoice = self.make_invoice(invoice_number="INV-GL-4", total_amount=Decimal("100.00"))
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+        with self.assertRaises(ValidationError):
+            transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+        self.assertEqual(
+            FinancialTransaction.objects.filter(
+                source_type=FinancialTransaction.SourceType.SUPPLIER_INVOICE,
+                source_id=invoice.id,
+            ).count(),
+            1,
+        )
+
+    def test_cancel_after_sent_voids_entry(self):
+        invoice = self.make_invoice(invoice_number="INV-GL-2", total_amount=Decimal("500.00"))
+        transition_status(invoice, SupplierInvoice.Status.SENT, created_by=self.user)
+        transition_status(invoice, SupplierInvoice.Status.CANCELLED, created_by=self.user)
+        self.assertEqual(self.gl_entry_for(invoice).status, FinancialTransaction.Status.VOIDED)
+
+    def test_cancel_from_draft_leaves_no_entry(self):
+        invoice = self.make_invoice(invoice_number="INV-GL-3")
+        transition_status(invoice, SupplierInvoice.Status.CANCELLED, created_by=self.user)
+        self.assertIsNone(self.gl_entry_for(invoice))
+
+
+class ClientInvoiceGLTests(ClientInvoicingTestBase):
+    """
+    Phase 2: sending a client invoice recognizes it as revenue with the
+    tax split out -- DR Accounts Receivable 1100, CR Construction Revenue
+    4000 (pre-tax) and CR Tax Payable 2100 (tax); cancel voids the entry.
+    """
+
+    def gl_entry_for(self, invoice):
+        return FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.CLIENT_INVOICE,
+            source_id=invoice.id,
+        ).first()
+
+    def test_mark_sent_books_dr_ar_cr_revenue_and_tax_payable(self):
+        invoice = self.make_client_invoice(
+            invoice_number="CINV-GL-1", subtotal=Decimal("1000.00"),
+            tax_amount=Decimal("150.00"), total_amount=Decimal("1150.00"),
+        )
+        transition_client_invoice_status(invoice, ClientInvoice.Status.SENT, created_by=self.user)
+
+        entry = self.gl_entry_for(invoice)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, FinancialTransaction.Status.POSTED)
+        self.assertEqual(entry.client_id, self.client_obj.id)
+        self.assertIn(invoice.invoice_number, entry.description)
+        by_account = {line.account.code: line for line in entry.lines.all()}
+        self.assertEqual(by_account["1100"].debit, Decimal("1150.00"))
+        self.assertEqual(by_account["4000"].credit, Decimal("1000.00"))
+        self.assertEqual(by_account["2100"].credit, Decimal("150.00"))
+        self.assertEqual(
+            sum(line.debit for line in entry.lines.all()),
+            sum(line.credit for line in entry.lines.all()),
+        )
+
+    def test_mark_sent_without_tax_books_two_line_entry(self):
+        invoice = self.make_client_invoice(
+            invoice_number="CINV-GL-2", subtotal=Decimal("500.00"),
+            tax_amount=Decimal("0.00"), total_amount=Decimal("500.00"),
+        )
+        transition_client_invoice_status(invoice, ClientInvoice.Status.SENT, created_by=self.user)
+
+        entry = self.gl_entry_for(invoice)
+        self.assertEqual(entry.lines.count(), 2)
+        by_account = {line.account.code: line for line in entry.lines.all()}
+        self.assertEqual(by_account["1100"].debit, Decimal("500.00"))
+        self.assertEqual(by_account["4000"].credit, Decimal("500.00"))
+        self.assertNotIn("2100", by_account)
+
+    def test_cancel_after_sent_voids_entry(self):
+        invoice = self.make_client_invoice(invoice_number="CINV-GL-3", total_amount=Decimal("400.00"))
+        transition_client_invoice_status(invoice, ClientInvoice.Status.SENT, created_by=self.user)
+        transition_client_invoice_status(invoice, ClientInvoice.Status.CANCELLED, created_by=self.user)
+        self.assertEqual(self.gl_entry_for(invoice).status, FinancialTransaction.Status.VOIDED)
+
+
+class ContractorInvoiceGLTests(WithUsersTableMixin, WithClientsTableMixin, WithProjectsTableMixin, TestCase):
+    """
+    Phase 2: sending a contractor invoice recognizes it in the GL exactly
+    like a supplier invoice (DR Cost of Construction / CR Accounts
+    Payable), with the contractor identified by the invoice number in the
+    journal description.
+    """
+
+    def setUp(self):
+        self.contractor_id = uuid4()
+        self.user = User.objects.create(
+            username="contractorgl", email="contractorgl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
+
+    def make_contractor_invoice(self, **kwargs):
+        defaults = dict(contractor_id=self.contractor_id, invoice_number="COINV-GL-1", invoice_date="2026-08-31")
+        defaults.update(kwargs)
+        return ContractorInvoice.objects.create(**defaults)
+
+    def gl_entry_for(self, invoice):
+        return FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.CONTRACTOR_INVOICE,
+            source_id=invoice.id,
+        ).first()
+
+    def test_mark_sent_books_ap_and_cost(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3450.00"), tax_amount=Decimal("450.00"))
+        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.SENT, created_by=self.user)
+
+        entry = self.gl_entry_for(invoice)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, FinancialTransaction.Status.POSTED)
+        self.assertIn(invoice.invoice_number, entry.description)
+        by_account = {line.account.code: line for line in entry.lines.all()}
+        self.assertEqual(by_account["5000"].debit, Decimal("3450.00"))
+        self.assertEqual(by_account["2000"].credit, Decimal("3450.00"))
+
+    def test_cancel_after_sent_voids_entry(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("1200.00"))
+        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.SENT, created_by=self.user)
+        transition_contractor_invoice_status(invoice, ContractorInvoice.Status.CANCELLED, created_by=self.user)
+        self.assertEqual(self.gl_entry_for(invoice).status, FinancialTransaction.Status.VOIDED)

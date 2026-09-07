@@ -10,15 +10,17 @@ Organized into:
 """
 from decimal import Decimal
 
-from django.contrib.auth.models import User as DjangoUser
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from accounting.models import Account, FinancialTransaction
+from accounting.services import AccountingError
 from clients.testing import WithClientsTableMixin
 from projects.models import Project
 from projects.testing import WithProjectsTableMixin
 from suppliers.models import Supplier
+from users.models import User
 from users.testing import WithUsersTableMixin
 
 from .models import Expense, ExpenseCategory
@@ -34,6 +36,13 @@ class ExpensesTestBase(WithProjectsTableMixin, WithClientsTableMixin, WithUsersT
     table has to exist too, not just projects. Project also FKs to
     clients.Client (CPMAS-47), so the clients table is materialized here
     the same way the payments/accounting/invoicing suites do.
+
+    Since CPMAS-34 (GL integration, Phase 1), the base also provisions a
+    real users.User (auto-GL entries are attributed to the actor, and
+    there's deliberately no anonymous fallback) and links the category to
+    the seeded 5000 - Cost of Construction chart-of-accounts entry, so a
+    PAID transition can actually be recognized in the ledger. "1000 -
+    Cash" comes from the accounting seed migration, run in the test DB.
     """
 
     """Shared fixtures: a project (real, from CPMAS-47) and an expense category."""
@@ -43,12 +52,18 @@ class ExpensesTestBase(WithProjectsTableMixin, WithClientsTableMixin, WithUsersT
             name="DUMMY Test Project", code="DUMMY-PROJ-1", project_type=Project.TYPE_WHOLE_BUILDING,
             start_date="2026-01-01", contract_value=Decimal("500000.00"),
         )
-        self.category = ExpenseCategory.objects.create(name="Materials")
+        self.user = User.objects.create(
+            username="expensesgl", email="expensesgl@cedar.test", password_hash="x",
+            first_name="G", last_name="L", role="ACCOUNTANT",
+        )
+        self.category = ExpenseCategory.objects.create(
+            name="Materials", account=Account.objects.get(code="5000"),
+        )
 
     def make_expense(self, **kwargs):
         defaults = dict(
             project=self.project, category=self.category, expense_date="2026-08-31",
-            description="Cement delivery", amount=Decimal("250.00"),
+            description="Cement delivery", amount=Decimal("250.00"), created_by=self.user,
         )
         defaults.update(kwargs)
         return Expense.objects.create(**defaults)
@@ -101,9 +116,8 @@ class TransitionStatusTests(ExpensesTestBase):
 class ExpenseAPITests(ExpensesTestBase):
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="apitester", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def test_create_expense_via_api(self):
         response = self.client.post("/api/expenses/expenses/", {
@@ -174,9 +188,8 @@ class ExpenseUpdateDeleteApiTests(ExpensesTestBase):
 
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="updtdel", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def test_update_expense_via_patch(self):
         expense = self.make_expense()
@@ -262,9 +275,8 @@ class ExpenseFilterAndPaginationTests(ExpensesTestBase):
 
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="filtertester", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.user)
 
     def make_supplier(self, **kwargs):
         defaults = {"name": "Filtered Supply Co"}
@@ -365,3 +377,99 @@ class ExpenseFilterAndPaginationTests(ExpensesTestBase):
         body = response.json()
         self.assertEqual(body["count"], 1)
         self.assertEqual(body["results"][0]["id"], str(in_month.id))
+
+
+class ExpenseGLIntegrationTests(ExpensesTestBase):
+    """
+    Phase 1 (CPMAS-34): marking an expense PAID recognizes it in the GL --
+    DR the category's chart-of-accounts entry / CR Cash (1000), for
+    amount + tax_amount -- exactly once, atomically, and with a clear
+    rollback when the category has no account configured.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def gl_entry_for(self, expense):
+        return FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.EXPENSE, source_id=expense.id,
+        ).first()
+
+    def make_paid_expense(self, **kwargs):
+        expense = self.make_expense(**kwargs)
+        transition_status(expense, Expense.Status.APPROVED)
+        transition_status(expense, Expense.Status.PAID)
+        return expense
+
+    def test_mark_paid_books_balanced_dr_category_cr_cash(self):
+        expense = self.make_paid_expense(amount=Decimal("250.00"), tax_amount=Decimal("12.50"))
+
+        entry = self.gl_entry_for(expense)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, FinancialTransaction.Status.POSTED)
+        self.assertEqual(entry.transaction_number[:8], "GL-2026-")
+        self.assertEqual(entry.source_type, FinancialTransaction.SourceType.EXPENSE)
+        self.assertEqual(entry.source_id, expense.id)
+        self.assertEqual(entry.project_id, expense.project_id)
+        self.assertIn(expense.description, entry.description)
+
+        total_debit = sum(line.debit for line in entry.lines.all())
+        total_credit = sum(line.credit for line in entry.lines.all())
+        self.assertEqual(total_debit, Decimal("262.50"))
+        self.assertEqual(total_credit, Decimal("262.50"))
+
+        debit = [line for line in entry.lines.all() if line.debit]
+        credit = [line for line in entry.lines.all() if line.credit]
+        self.assertEqual(len(debit), 1)
+        self.assertEqual(len(credit), 1)
+        self.assertEqual(debit[0].account_id, self.category.account_id)
+        self.assertEqual(credit[0].account.code, "1000")
+
+    def test_paid_expense_cannot_be_booked_twice(self):
+        expense = self.make_paid_expense()
+        with self.assertRaises(ValidationError):
+            transition_status(expense, Expense.Status.PAID)
+        self.assertEqual(
+            FinancialTransaction.objects.filter(
+                source_type=FinancialTransaction.SourceType.EXPENSE, source_id=expense.id,
+            ).count(),
+            1,
+        )
+
+    def test_rejected_expense_never_reaches_the_ledger(self):
+        expense = self.make_expense()
+        transition_status(expense, Expense.Status.APPROVED)
+        transition_status(expense, Expense.Status.REJECTED)
+        self.assertIsNone(self.gl_entry_for(expense))
+
+    def test_category_without_account_blocks_paid_and_rolls_back(self):
+        unlinked = ExpenseCategory.objects.create(name="Unlinked", account=None)
+        expense = self.make_expense(category=unlinked)
+        transition_status(expense, Expense.Status.APPROVED)
+
+        with self.assertRaises(AccountingError):
+            transition_status(expense, Expense.Status.PAID)
+
+        expense.refresh_from_db()
+        self.assertEqual(expense.status, Expense.Status.APPROVED)
+        self.assertIsNone(self.gl_entry_for(expense))
+
+    def test_mark_paid_via_api_books_entry(self):
+        expense = self.make_expense()
+        self.assertEqual(self.client.post(f"/api/expenses/expenses/{expense.id}/approve/").status_code, 200)
+        response = self.client.post(f"/api/expenses/expenses/{expense.id}/mark_paid/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "PAID")
+        self.assertIsNotNone(self.gl_entry_for(expense))
+
+    def test_mark_paid_via_api_400_when_category_unlinked(self):
+        unlinked = ExpenseCategory.objects.create(name="NoAccount", account=None)
+        expense = self.make_expense(category=unlinked)
+        self.assertEqual(self.client.post(f"/api/expenses/expenses/{expense.id}/approve/").status_code, 200)
+
+        response = self.client.post(f"/api/expenses/expenses/{expense.id}/mark_paid/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("status", response.json())
+        self.assertIsNone(self.gl_entry_for(expense))

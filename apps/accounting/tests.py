@@ -11,9 +11,12 @@ Organized into:
   status-change actions, DRAFT-lock enforcement, and validation.
 """
 from decimal import Decimal
+import re
+import uuid
 
 from django.contrib.auth.models import User as DjangoUser
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -24,12 +27,24 @@ from users.models import User
 from users.testing import WithUsersTableMixin
 
 from .models import Account, FinancialTransaction, TransactionLine
-from .services import post_transaction, transaction_totals, void_transaction
+from .services import (
+    AccountingError,
+    post_source_entry,
+    post_transaction,
+    transaction_totals,
+    void_transaction,
+)
 
 
 class AccountingTestBase(WithProjectsTableMixin, WithClientsTableMixin, WithUsersTableMixin, TestCase):
     """
-    Shared fixtures: two GL accounts (cash, revenue) and a creator user.
+    Shared fixtures: the seeded GL accounts (cash, revenue) and a creator
+    user.
+
+    The COA seed data migration (accounting 0002) provisions 1000 - Cash
+    and 4000 - Construction Revenue, so these fixtures resolve them from
+    the chart rather than re-creating them -- which also pins the seed
+    migration itself.
 
     Mixes in all three managed=False table mixins: FinancialTransaction/
     TransactionLine have nullable FKs into projects and clients, and
@@ -40,8 +55,8 @@ class AccountingTestBase(WithProjectsTableMixin, WithClientsTableMixin, WithUser
     """
 
     def setUp(self):
-        self.cash_account = Account.objects.create(code="1000", name="Cash", account_type="Asset")
-        self.revenue_account = Account.objects.create(code="4000", name="Construction Revenue", account_type="Revenue")
+        self.cash_account = Account.objects.get(code="1000")
+        self.revenue_account = Account.objects.get(code="4000")
         self.creator = User.objects.create(
             username="creator", email="creator@example.com", password_hash="x",
             first_name="C", last_name="R", role="accountant",
@@ -61,13 +76,13 @@ class AccountingTestBase(WithProjectsTableMixin, WithClientsTableMixin, WithUser
 
 class AccountModelTests(TestCase):
     def test_code_must_be_unique(self):
-        Account.objects.create(code="1000", name="Cash", account_type="Asset")
+        Account.objects.create(code="9001", name="Cash", account_type="Asset")
         with self.assertRaises(Exception):
-            Account.objects.create(code="1000", name="Duplicate", account_type="Asset")
+            Account.objects.create(code="9001", name="Duplicate", account_type="Asset")
 
     def test_parent_deletion_is_protected_while_children_exist(self):
-        parent = Account.objects.create(code="1000", name="Assets", account_type="Asset")
-        Account.objects.create(code="1010", name="Cash", account_type="Asset", parent_account=parent)
+        parent = Account.objects.create(code="9000", name="Assets", account_type="Asset")
+        Account.objects.create(code="9010", name="Cash", account_type="Asset", parent_account=parent)
         with self.assertRaises(ProtectedError):
             parent.delete()
 
@@ -167,7 +182,7 @@ class AccountingAPITests(AccountingTestBase):
 
     def test_create_account_via_api(self):
         response = self.client.post("/api/accounting/accounts/", {
-            "code": "2000", "name": "Accounts Payable", "account_type": "Liability",
+            "code": "2010", "name": "Accounts Payable", "account_type": "Liability",
         }, format="json")
         self.assertEqual(response.status_code, 201)
 
@@ -248,14 +263,10 @@ class ReportServiceTests(AccountingTestBase):
 
     def setUp(self):
         super().setUp()
-        self.expense_account = Account.objects.create(
-            code="5000", name="Operating Expense", account_type="Expense"
-        )
+        self.expense_account = Account.objects.get(code="5000")
         # accounts_payable is a standard expense-related balance account
         # used as the credit counter for expense lines
-        self.payable_account = Account.objects.create(
-            code="2000", name="Accounts Payable", account_type="Liability"
-        )
+        self.payable_account = Account.objects.get(code="2000")
 
     def test_profit_loss_sums_revenue_minus_expense(self):
         from .reports import profit_loss
@@ -348,12 +359,8 @@ class ReportAPITests(AccountingTestBase):
         django_user = DjangoUser.objects.create_user(username="reporter", password="pass12345")
         self.client = APIClient()
         self.client.force_authenticate(user=django_user)
-        self.expense_account = Account.objects.create(
-            code="5000", name="Operating Expense", account_type="Expense"
-        )
-        self.payable_account = Account.objects.create(
-            code="2000", name="Accounts Payable", account_type="Liability"
-        )
+        self.expense_account = Account.objects.get(code="5000")
+        self.payable_account = Account.objects.get(code="2000")
 
     def _post_revenue_and_expense(self):
         rev = self.make_transaction(transaction_number="REV-API", transaction_date="2026-08-15")
@@ -419,7 +426,7 @@ class ChartOfAccountsApiTests(AccountingTestBase):
 
     def test_create_account_via_api(self):
         response = self.client.post("/api/accounting/accounts/", {
-            "code": "2000", "name": "Accounts Payable", "account_type": "Liability",
+            "code": "2010", "name": "Accounts Payable", "account_type": "Liability",
         }, format="json")
         self.assertEqual(response.status_code, 201)
         created = Account.objects.get(pk=response.data["id"])
@@ -459,3 +466,204 @@ class ChartOfAccountsApiTests(AccountingTestBase):
         rows = response.data["results"]
         self.assertTrue(any(str(r["id"]) == str(self.cash.id) for r in rows))
         self.assertTrue(all(str(r["id"]) != str(self.assets.id) for r in rows))
+
+
+class ChartOfAccountsSeedTests(TestCase):
+    """The 0002 data migration seeds the starter COA exactly once."""
+
+    def test_seed_populates_core_accounts(self):
+        by_code = {a.code: a for a in Account.objects.all()}
+        for code, name, account_type in [
+            ("1000", "Cash", "Asset"),
+            ("1100", "Accounts Receivable", "Asset"),
+            ("2000", "Accounts Payable", "Liability"),
+            ("2100", "Tax Payable", "Liability"),
+            ("4000", "Construction Revenue", "Revenue"),
+            ("5000", "Cost of Construction", "Expense"),
+            ("6000", "General Operating Expenses", "Expense"),
+        ]:
+            account = by_code.get(code)
+            self.assertIsNotNone(account, f"seed account {code} missing")
+            self.assertEqual(account.name, name)
+            self.assertEqual(account.account_type, account_type)
+
+
+class SourceTypeModelTests(AccountingTestBase):
+    """source_type/source_id pairing + the partial unique constraint."""
+
+    def test_manual_entry_has_no_source(self):
+        txn = self.make_transaction()
+        txn.full_clean()
+        self.assertIsNone(txn.source_type)
+        self.assertIsNone(txn.source_id)
+
+    def test_source_pair_required_on_system_entry(self):
+        txn = FinancialTransaction(
+            transaction_number="SRC-CLEAN-1", transaction_date="2026-08-31",
+            description="Source without id", created_by=self.creator,
+            source_type=FinancialTransaction.SourceType.EXPENSE,
+        )
+        with self.assertRaises(ValidationError):
+            txn.full_clean()
+
+    def test_valid_source_pair_passes_clean(self):
+        txn = FinancialTransaction(
+            transaction_number="SRC-CLEAN-2", transaction_date="2026-08-31",
+            description="Booked expense", created_by=self.creator,
+            source_type=FinancialTransaction.SourceType.EXPENSE, source_id=uuid.uuid4(),
+        )
+        txn.full_clean()
+
+    def test_duplicate_live_source_pair_rejected_by_database(self):
+        source_id = uuid.uuid4()
+        self.make_transaction(
+            transaction_number="SRC-DB-1",
+            source_type=FinancialTransaction.SourceType.EXPENSE, source_id=source_id,
+        )
+        with self.assertRaises(IntegrityError):
+            self.make_transaction(
+                transaction_number="SRC-DB-2",
+                source_type=FinancialTransaction.SourceType.EXPENSE, source_id=source_id,
+            )
+
+    def test_voided_entry_releases_source_pair(self):
+        source_id = uuid.uuid4()
+        first = self.make_transaction(
+            transaction_number="SRC-V-1",
+            source_type=FinancialTransaction.SourceType.EXPENSE, source_id=source_id,
+        )
+        void_transaction(first)
+        second = self.make_transaction(
+            transaction_number="SRC-V-2",
+            source_type=FinancialTransaction.SourceType.EXPENSE, source_id=source_id,
+        )
+        self.assertEqual(second.status, FinancialTransaction.Status.DRAFT)
+
+
+class AutoEntryServiceTests(AccountingTestBase):
+    """post_source_entry -- the auto-journal primitive behind Phases 1-3."""
+
+    def _balanced_lines(self):
+        return [
+            {"account": self.cash_account, "debit": Decimal("1000.00")},
+            {"account": self.revenue_account, "credit": Decimal("1000.00")},
+        ]
+
+    def _book(self, source_id=None, **overrides):
+        kwargs = dict(
+            source_type=FinancialTransaction.SourceType.EXPENSE,
+            source_id=source_id or uuid.uuid4(),
+            transaction_date="2026-08-31",
+            description="Auto expense entry",
+            created_by=self.creator,
+            lines=self._balanced_lines(),
+        )
+        kwargs.update(overrides)
+        return post_source_entry(**kwargs)
+
+    def test_creates_and_posts_a_balanced_auto_entry(self):
+        source_id = uuid.uuid4()
+        header = self._book(source_id)
+        header.refresh_from_db()
+        self.assertEqual(header.status, FinancialTransaction.Status.POSTED)
+        self.assertIsNotNone(header.posted_at)
+        self.assertEqual(header.source_type, FinancialTransaction.SourceType.EXPENSE)
+        self.assertEqual(header.source_id, source_id)
+        self.assertRegex(header.transaction_number, r"^GL-2026-\d{4}$")
+        self.assertEqual(transaction_totals(header), (Decimal("1000.00"), Decimal("1000.00")))
+
+    def test_transaction_numbers_sequence(self):
+        first = self._book()
+        second = self._book()
+
+        def _seq(txn):
+            return int(txn.transaction_number.rsplit("-", 1)[1])
+
+        self.assertEqual(_seq(second), _seq(first) + 1)
+
+    def test_duplicate_live_source_rejected(self):
+        source_id = uuid.uuid4()
+        self._book(source_id)
+        with self.assertRaises(AccountingError):
+            self._book(source_id)
+
+    def test_rebook_allowed_after_void(self):
+        source_id = uuid.uuid4()
+        first = self._book(source_id)
+        void_transaction(first)
+        second = self._book(source_id)
+        self.assertEqual(second.status, FinancialTransaction.Status.POSTED)
+        self.assertNotEqual(second.id, first.id)
+
+    def test_unbalanced_lines_rejected(self):
+        lines = [
+            {"account": self.cash_account, "debit": Decimal("1000.00")},
+            {"account": self.revenue_account, "credit": Decimal("500.00")},
+        ]
+        with self.assertRaises(AccountingError):
+            self._book(lines=lines)
+
+    def test_line_with_both_debit_and_credit_rejected(self):
+        lines = [
+            {"account": self.cash_account, "debit": Decimal("100.00"), "credit": Decimal("100.00")},
+        ]
+        with self.assertRaises(AccountingError):
+            self._book(lines=lines)
+
+    def test_requires_an_acting_user(self):
+        with self.assertRaises(AccountingError):
+            post_source_entry(
+                source_type=FinancialTransaction.SourceType.EXPENSE,
+                source_id=uuid.uuid4(), transaction_date="2026-08-31",
+                description="No actor", lines=self._balanced_lines(),
+            )
+
+
+class SourceTrackingAPITests(AccountingTestBase):
+    """The journal API exposes -- but never accepts client-supplied -- source fields."""
+
+    def setUp(self):
+        super().setUp()
+        django_user = DjangoUser.objects.create_user(username="sourcetracker", password="pass12345")
+        self.client = APIClient()
+        self.client.force_authenticate(user=django_user)
+
+    def test_source_fields_exposed_on_read(self):
+        source_id = uuid.uuid4()
+        txn = self.make_transaction(
+            transaction_number="SRC-API-1",
+            source_type=FinancialTransaction.SourceType.EXPENSE,
+            source_id=source_id,
+        )
+        response = self.client.get(f"/api/accounting/financial-transactions/{txn.id}/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["source_type"], "EXPENSE")
+        self.assertEqual(data["source_id"], str(source_id))
+        self.assertEqual(data["source_label"], "Expense")
+
+    def test_manual_entry_shows_manual_source(self):
+        txn = self.make_transaction(transaction_number="SRC-API-MANUAL")
+        response = self.client.get(f"/api/accounting/financial-transactions/{txn.id}/")
+        self.assertEqual(response.json()["source_label"], "Manual")
+
+    def test_source_fields_cannot_be_set_via_api(self):
+        response = self.client.post("/api/accounting/financial-transactions/", {
+            "transaction_number": "TXN-SRC-SPOOF", "transaction_date": "2026-08-31",
+            "description": "Spoof attempt", "created_by": str(self.creator.id),
+            "source_type": "PAYMENT", "source_id": str(uuid.uuid4()),
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        created = FinancialTransaction.objects.get(pk=response.json()["id"])
+        self.assertIsNone(created.source_type)
+        self.assertIsNone(created.source_id)
+
+    def test_filter_by_source_type(self):
+        source_id = uuid.uuid4()
+        sourced = self.make_transaction(
+            transaction_number="SRC-API-2",
+            source_type=FinancialTransaction.SourceType.PAYMENT, source_id=source_id,
+        )
+        response = self.client.get("/api/accounting/financial-transactions/?source_type=payment")
+        numbers = [t["transaction_number"] for t in response.json()["results"]]
+        self.assertIn(sourced.transaction_number, numbers)

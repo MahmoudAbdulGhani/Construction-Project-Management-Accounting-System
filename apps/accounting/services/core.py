@@ -1,5 +1,5 @@
 """
-Business logic for the ``accounting`` app that must not live in a
+Ledger primitives for the ``accounting`` app that must not live in a
 serializer or viewset.
 
 The single most important rule in this app: BR 12.7 / BRD 5.22 --
@@ -7,6 +7,10 @@ The single most important rule in this app: BR 12.7 / BRD 5.22 --
 Total Credits)". Enforced here, not in a serializer, so it can't be
 bypassed by any future code path that touches FinancialTransaction.status
 directly.
+
+Auto-generated entries (see ``accounting.services.auto``) go through the
+same ``post_transaction`` gate; there is deliberately no separate "auto"
+posting path that could skip the balance check.
 """
 from decimal import Decimal
 
@@ -15,7 +19,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from .models import FinancialTransaction
+from ..models import FinancialTransaction
 
 
 def transaction_totals(financial_transaction: FinancialTransaction) -> tuple[Decimal, Decimal]:
@@ -73,7 +77,11 @@ def void_transaction(financial_transaction: FinancialTransaction) -> FinancialTr
     unbuilt) for this to reverse. It just flags the entry as no longer
     valid; a real correction is a new, separate journal entry, same as
     the ledger-immutability pattern used for StockMovement/GoodsReceipt
-    elsewhere in this codebase.
+    elsewhere in this codebase. For auto-generated entries this is exactly
+    how a cancelled invoice is handled: the original posted lines stay
+    visible but are flagged invalid, and the source pair is released
+    (VOIDED entries are excluded from the partial unique constraint) so the
+    document can never be booked twice into the live ledger.
     """
     if financial_transaction.status == FinancialTransaction.Status.VOIDED:
         raise ValidationError("This financial transaction is already voided.")

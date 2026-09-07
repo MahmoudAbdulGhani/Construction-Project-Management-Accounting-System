@@ -14,10 +14,14 @@ class AuditConfig(AppConfig):
         # ``(model, entity_type, label)`` so each model is registered once.
         #
         # Audit scope: users and tax configuration, people records, plus
-        # money-moving and counterparty documents. Dropped as low audit value:
-        # Project phase, Project budget, Material category, Warehouse, Account,
-        # Financial transaction, line items -- high-frequency churn or derived
+        # money-moving and counterparty documents -- including the GL
+        # (Account, FinancialTransaction), since journal entries are now
+        # auto-generated from those documents and the financial
+        # transactions table IS the ledger. Dropped as low audit value:
+        # Project phase, Project budget, Material category, Warehouse,
+        # transaction line items -- high-frequency churn or derived
         # bookkeeping that would flood the trail without helping.
+        from accounting.models import Account, FinancialTransaction
         from clients.models import Client
         from company.models import CompanyProfile
         from contractors.models import Contractor
@@ -44,6 +48,8 @@ class AuditConfig(AppConfig):
             (PurchaseOrder, 'purchase_order', 'Purchase order', 'Operations'),
             (GoodsReceipt, 'goods_receipt', 'Goods receipt', 'Operations'),
             (Material, 'material', 'Material', 'Operations'),
+            (Account, 'account', 'Account', 'Money'),
+            (FinancialTransaction, 'financial_transaction', 'Financial transaction', 'Money'),
             (SupplierInvoice, 'supplier_invoice', 'Supplier invoice', 'Money'),
             (ClientInvoice, 'client_invoice', 'Client invoice', 'Money'),
             (Expense, 'expense', 'Expense', 'Money'),

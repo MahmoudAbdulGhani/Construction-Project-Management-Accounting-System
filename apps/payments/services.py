@@ -20,6 +20,12 @@ Two concerns are centralized here, for the same reason
    payment gets a receipt (both money received from a client and money
    paid out to a supplier/employee/contractor) -- see
    PaymentViewSet.perform_create.
+4. GL recognition (CPMAS-34/Phase 3): every successful
+   ``allocate_payment`` re-books the payment's journal from its current
+   allocation set -- book_payment voids any existing PAYMENT entry and
+   posts a fresh one (DR Cash/CR AR inflow, DR AP/CR Cash outflow), so
+   the live journal always mirrors the money actually applied. Receipts
+   never create journals. See ``accounting.services.book_payment``.
 """
 from decimal import Decimal
 import re
@@ -29,6 +35,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from accounting.models import FinancialTransaction
+from accounting.services import book_payment, void_source_entry
 from invoicing.models import ClientInvoice, ContractorInvoice, SupplierInvoice
 
 from .models import Payment, PaymentAllocation, Receipt
@@ -130,6 +138,10 @@ def allocate_payment(payment: Payment, invoice, allocated_amount: Decimal) -> Pa
 
     On success: creates the PaymentAllocation, then sets the invoice to
     PAID if its new outstanding balance is <= 0, else PARTIALLY_PAID.
+    Finally re-books the payment's GL journal from its new allocation
+    set (see ``_rebook_payment_journal``) -- every allocation change
+    makes the previous PAYMENT entry VOIDED and posts a fresh one, so
+    the ledger always reflects the payment's real allocation state.
     """
     is_client_invoice = isinstance(invoice, ClientInvoice)
     is_supplier_invoice = isinstance(invoice, SupplierInvoice)
@@ -197,7 +209,22 @@ def allocate_payment(payment: Payment, invoice, allocated_amount: Decimal) -> Pa
     invoice.status = invoice.Status.PAID if new_balance <= Decimal('0.00') else invoice.Status.PARTIALLY_PAID
     invoice.save(update_fields=['status', 'updated_at'])
 
+    _rebook_payment_journal(payment)
+
     return allocation
+
+
+def _rebook_payment_journal(payment: Payment) -> None:
+    """
+    CPMAS-34/Phase 3: rebuild the payment's GL recognition from its
+    current allocation set. The existing PAYMENT entry (if any) is
+    voided and a fresh one booked from the current allocations, so the
+    live journal always equals the payment's real allocation state.
+    Called inside allocate_payment's atomic block; a booking failure
+    rolls the whole allocation back.
+    """
+    void_source_entry(FinancialTransaction.SourceType.PAYMENT, payment.id)
+    book_payment(payment, created_by=payment.created_by)
 
 
 def issue_receipt_for_payment(payment: Payment) -> Receipt:

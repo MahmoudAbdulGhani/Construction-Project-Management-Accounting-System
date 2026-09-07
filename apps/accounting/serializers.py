@@ -71,22 +71,26 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
     lines = TransactionLineSerializer(many=True, read_only=True)
     total_debit = serializers.SerializerMethodField()
     total_credit = serializers.SerializerMethodField()
+    source_label = serializers.SerializerMethodField()
 
     class Meta:
         model = FinancialTransaction
         fields = [
             'id', 'transaction_number', 'transaction_date', 'description', 'reference',
             'project', 'project_name', 'client', 'client_name', 'supplier', 'supplier_name',
-            'status', 'created_by', 'posted_at', 'lines', 'total_debit', 'total_credit',
-            'created_at', 'updated_at',
+            'status', 'created_by', 'posted_at', 'source_type', 'source_id', 'source_label',
+            'lines', 'total_debit', 'total_credit', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['status', 'posted_at', 'created_at', 'updated_at']
+        read_only_fields = ['status', 'posted_at', 'created_at', 'updated_at', 'source_type', 'source_id']
 
     def get_total_debit(self, obj):
         return transaction_totals(obj)[0]
 
     def get_total_credit(self, obj):
         return transaction_totals(obj)[1]
+
+    def get_source_label(self, obj):
+        return obj.get_source_type_display() if obj.source_type else 'Manual'
 
 
 def apply_post(financial_transaction: FinancialTransaction) -> FinancialTransaction:

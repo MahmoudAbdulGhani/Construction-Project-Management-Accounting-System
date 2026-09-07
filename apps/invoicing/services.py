@@ -20,6 +20,15 @@ documented.
    passed (SENT or PARTIALLY_PAID) becomes OVERDUE via
    sync_overdue_statuses, called from the invoice viewsets on read -- a
    page view is what makes "past due" visible, no user action required.
+
+Since CPMAS-34 (Accounting/GL integration, Phase 2), sending an invoice
+also recognizes it in the general ledger: ``transition_status`` /
+``transition_client_invoice_status`` / ``transition_contractor_invoice_status``
+call ``accounting.services.book_*_invoice`` inside the same atomic block
+when the target is SENT, and void the linked journal entry (via
+``accounting.services.void_source_entry``) when a SENT invoice is
+cancelled. A failed booking rolls the whole transition back, so an
+invoice is either SENT with its GL entry or it isn't sent at all.
 """
 from decimal import ROUND_HALF_UP, Decimal
 import re
@@ -27,6 +36,14 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+
+from accounting.models import FinancialTransaction
+from accounting.services import (
+    book_client_invoice,
+    book_contractor_invoice,
+    book_supplier_invoice,
+    void_source_entry,
+)
 
 from .models import (
     ClientInvoice,
@@ -156,8 +173,13 @@ ALLOWED_TRANSITIONS = {
 }
 
 
-def transition_status(invoice: SupplierInvoice, new_status: str) -> SupplierInvoice:
-    """Move a SupplierInvoice to new_status if valid; raises ValidationError otherwise."""
+def transition_status(invoice: SupplierInvoice, new_status: str, *, created_by=None) -> SupplierInvoice:
+    """Move a SupplierInvoice to new_status if valid; raises ValidationError otherwise.
+
+    SENT bookings (and SENT->CANCELLED voids) run inside the same atomic
+    block as the status change, so an unconfigured GL account rolls the
+    transition back and the invoice stays DRAFT/SENT.
+    """
     current = SupplierInvoice.Status(invoice.status)
     target = SupplierInvoice.Status(new_status)
 
@@ -166,8 +188,19 @@ def transition_status(invoice: SupplierInvoice, new_status: str) -> SupplierInvo
             f"Cannot move a supplier invoice from {current.label} to {target.label}."
         )
 
-    invoice.status = target
-    invoice.save(update_fields=['status', 'updated_at'])
+    if target == SupplierInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            book_supplier_invoice(invoice, created_by=created_by)
+    elif target == SupplierInvoice.Status.CANCELLED and current == SupplierInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            void_source_entry(FinancialTransaction.SourceType.SUPPLIER_INVOICE, invoice.id)
+    else:
+        invoice.status = target
+        invoice.save(update_fields=['status', 'updated_at'])
     return invoice
 
 
@@ -236,8 +269,11 @@ CLIENT_INVOICE_ALLOWED_TRANSITIONS = {
 }
 
 
-def transition_client_invoice_status(invoice: ClientInvoice, new_status: str) -> ClientInvoice:
-    """Move a ClientInvoice to new_status if valid; raises ValidationError otherwise."""
+def transition_client_invoice_status(invoice: ClientInvoice, new_status: str, *, created_by=None) -> ClientInvoice:
+    """Move a ClientInvoice to new_status if valid; raises ValidationError otherwise.
+
+    Same SENT booking / SENT->CANCELLED void semantics as transition_status.
+    """
     current = ClientInvoice.Status(invoice.status)
     target = ClientInvoice.Status(new_status)
 
@@ -246,8 +282,19 @@ def transition_client_invoice_status(invoice: ClientInvoice, new_status: str) ->
             f"Cannot move a client invoice from {current.label} to {target.label}."
         )
 
-    invoice.status = target
-    invoice.save(update_fields=['status', 'updated_at'])
+    if target == ClientInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            book_client_invoice(invoice, created_by=created_by)
+    elif target == ClientInvoice.Status.CANCELLED and current == ClientInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            void_source_entry(FinancialTransaction.SourceType.CLIENT_INVOICE, invoice.id)
+    else:
+        invoice.status = target
+        invoice.save(update_fields=['status', 'updated_at'])
     return invoice
 
 
@@ -304,8 +351,11 @@ CONTRACTOR_INVOICE_ALLOWED_TRANSITIONS = {
 }
 
 
-def transition_contractor_invoice_status(invoice: ContractorInvoice, new_status: str) -> ContractorInvoice:
-    """Move a ContractorInvoice to new_status if valid; raises ValidationError otherwise."""
+def transition_contractor_invoice_status(invoice: ContractorInvoice, new_status: str, *, created_by=None) -> ContractorInvoice:
+    """Move a ContractorInvoice to new_status if valid; raises ValidationError otherwise.
+
+    Same SENT booking / SENT->CANCELLED void semantics as transition_status.
+    """
     current = ContractorInvoice.Status(invoice.status)
     target = ContractorInvoice.Status(new_status)
 
@@ -314,8 +364,19 @@ def transition_contractor_invoice_status(invoice: ContractorInvoice, new_status:
             f"Cannot move a contractor invoice from {current.label} to {target.label}."
         )
 
-    invoice.status = target
-    invoice.save(update_fields=['status', 'updated_at'])
+    if target == ContractorInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            book_contractor_invoice(invoice, created_by=created_by)
+    elif target == ContractorInvoice.Status.CANCELLED and current == ContractorInvoice.Status.SENT:
+        with transaction.atomic():
+            invoice.status = target
+            invoice.save(update_fields=['status', 'updated_at'])
+            void_source_entry(FinancialTransaction.SourceType.CONTRACTOR_INVOICE, invoice.id)
+    else:
+        invoice.status = target
+        invoice.save(update_fields=['status', 'updated_at'])
     return invoice
 
 

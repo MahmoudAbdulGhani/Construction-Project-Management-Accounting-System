@@ -5,7 +5,7 @@
 {% block dashboard_content %}
 <section class="page-heading">
   <div><p class="eyebrow">Finance</p><h1>Accounting</h1><p>Manage journal entries and financial transactions — post balanced entries to the ledger.</p></div>
-  <div class="page-actions"><button class="primary-button" type="button" data-open-create>＋ New transaction</button></div>
+  <div class="page-actions"><button class="primary-button" type="button" data-open-create>＋ New journal entry</button></div>
 </section>
 
 <section class="accounting-stat-grid">
@@ -27,8 +27,8 @@
     <label class="accounting-date-filter">To<input type="date" data-date-to></label>
   </div>
   <div class="responsive-table"><table>
-    <thead><tr><th>Transaction</th><th>Date</th><th>Description</th><th>Project</th><th>Client</th><th>Supplier</th><th>Debit</th><th>Credit</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody data-transaction-rows><tr class="empty-row"><td colspan="10"><b>Loading transactions…</b><span>Fetching from the accounting API.</span></td></tr></tbody>
+    <thead><tr><th>Transaction</th><th>Date</th><th>Description</th><th>Source</th><th>Project</th><th>Client</th><th>Supplier</th><th>Debit</th><th>Credit</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody data-transaction-rows><tr class="empty-row"><td colspan="11"><b>Loading transactions…</b><span>Fetching from the accounting API.</span></td></tr></tbody>
   </table></div>
   <div class="accounting-pagination">
     <span data-page-info>Page 1</span>

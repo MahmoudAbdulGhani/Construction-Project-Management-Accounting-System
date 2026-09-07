@@ -100,6 +100,14 @@ class FinancialTransactionViewSet(viewsets.ModelViewSet):
         if supplier_id:
             queryset = queryset.filter(supplier_id=supplier_id)
 
+        source_type = params.get('source_type')
+        if source_type:
+            queryset = queryset.filter(source_type=source_type.upper())
+
+        source_id = params.get('source_id')
+        if source_id:
+            queryset = queryset.filter(source_id=source_id)
+
         queryset = filter_date_range(queryset, params, 'transaction_date')
 
         return queryset

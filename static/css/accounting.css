@@ -134,3 +134,7 @@
   .module-table .filterbar{grid-template-columns:1fr}
   .module-table .local-search{grid-column:auto}
 }
+
+/* Source dimension (CPMAS-34): who/what generated the journal entry. */
+.module-table .source-tag{display:inline-block;padding:3px 9px;border:1px solid #a9cdc4;border-radius:999px;background:#e8f3ef;color:#0c5d57;font-size:10px;font-weight:700;line-height:1.2;white-space:nowrap}
+.module-table .source-tag.manual{background:#f3efe4;border-color:#d9c9a3;color:#7a5c17}

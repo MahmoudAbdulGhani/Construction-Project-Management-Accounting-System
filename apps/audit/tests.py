@@ -245,13 +245,15 @@ class AuditLogApiTests(WithUsersTableMixin, WithAuditLogsTableMixin, TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         entities = response.data
         types = [e["entity_type"] for e in entities]
-        self.assertEqual(len(types), 16)
+        self.assertEqual(len(types), 18)
         self.assertIn("user", types)
         self.assertIn("tax_rate", types)
         self.assertIn("project", types)
         self.assertIn("purchase_order", types)
         self.assertIn("employee", types)
         self.assertIn("expense", types)
+        self.assertIn("account", types)
+        self.assertIn("financial_transaction", types)
         labels = {e["entity_type"]: e["label"] for e in entities}
         self.assertEqual(labels["user"], "User")
         self.assertEqual(labels["project"], "Project")
