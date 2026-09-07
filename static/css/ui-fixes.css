@@ -91,6 +91,14 @@ select.users-filter {
 dialog .ui-fancy-pop { z-index: 320 !important; }
 dialog .ui-fancy-wrap,
 .responsive-table .ui-fancy-wrap { position: relative; }
+/* financial add-account — keep pop near field while keeping modal scrollable */
+[data-fin-modal] .users-select { position: relative !important; }
+[data-fin-modal] .users-options {
+    position: fixed !important;
+    min-width: 220px !important;
+    max-width: 320px;
+    z-index: 330 !important;
+}
 .ui-fancy-pop[hidden] { display: none !important; }
 .ui-fancy-opt {
   display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
@@ -353,3 +361,87 @@ dialog .ui-calendar {
     display: none !important;
 }
 .local-search input:focus { outline: none !important; box-shadow: none !important; }
+
+/* home Employee login — remove underline directly inside button (was still showing) */
+.cedar-public-nav .public-login,
+.cedar-public-nav a.public-login,
+a.public-login,
+.public-login,
+.public-login *,
+.public-login:hover,
+.public-login:focus,
+.public-login:active,
+.public-login *:hover {
+    text-decoration: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+    -webkit-text-decoration: none !important;
+}
+
+/* ==========================================================
+   5. ACTION BUTTONS — make all Edit/View/Post/Delete match Accounting
+   ========================================================== */
+.row-action,
+.partner-action,
+.employee-edit-icon,
+.inventory-row-actions .quiet-button,
+.inventory-row-actions .primary-button,
+.po-row-actions .row-action,
+.expense-row-actions .quiet-button,
+.payment-actions .accounting-row-action,
+[data-edit],
+[data-view],
+[data-post],
+[data-delete],
+[data-expense-action] {
+    border: 1px solid #7fb3a9 !important;
+    background: #eaf3ef !important;
+    color: #075e59 !important;
+    border-radius: 8px !important;
+    padding: 5px 11px !important;
+    font-size: 10.5px !important;
+    font-weight: 800 !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease !important;
+}
+.row-action:not(.danger):hover,
+.partner-action:not(.delete):hover,
+.employee-edit-icon:hover,
+.inventory-row-actions .quiet-button:not(.danger):hover,
+.po-row-actions .row-action:not(.danger):hover,
+.expense-row-actions .quiet-button:not(.danger):hover {
+    background: #d5e9e2 !important;
+    border-color: #0a8a80 !important;
+    color: #066059 !important;
+    box-shadow: 0 4px 12px #0a625c22 !important;
+    transform: translateY(-1px) !important;
+}
+.row-action:active,
+.partner-action:active,
+.employee-edit-icon:active { transform: translateY(0) scale(.96) !important; }
+.row-action.post,
+.partner-action.post,
+[data-post] {
+    background: linear-gradient(135deg,#0a8f85,#05635e) !important;
+    border-color: #05635e !important;
+    color: #f4fffc !important;
+}
+.row-action.danger,
+.partner-action.delete,
+[data-delete],
+[data-doc-delete],
+.doc-row-actions button,
+.expense-row-actions .danger,
+.inventory-row-actions .danger-button {
+    background: #fbeceb !important;
+    border-color: #cc8a84 !important;
+    color: #a23a31 !important;
+    padding: 4px 14px !important;
+    min-width: 64px !important;
+}
+.row-action.danger:hover,
+.partner-action.delete:hover,
+[data-delete]:hover,
+[data-doc-delete]:hover,
+.doc-row-actions button:hover { background: #f6dcd9 !important; border-color: #a23a31 !important; }

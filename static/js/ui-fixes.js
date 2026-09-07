@@ -44,6 +44,8 @@
   }
   function shouldEnhanceSelect(select) {
     if (isAlreadyFancy(select)) return false;
+    // financial/taxes/users modals already use company_settings fancySelect — don't double-wrap
+    if (select.closest("[data-fin-modal]") || select.closest("[data-taxes-modal]") || select.closest("[data-users-modal]")) return false;
     return true;
   }
 

@@ -64,10 +64,6 @@
   if (taxesPane) { try { initTaxesPane(); } catch (e) { console.error("taxes", e); } }
 
   var auditPane = document.querySelector('[data-settings-pane="audit"]');
-  if (auditPane) { initAuditPane(); }
-
-  var finPane = document.querySelector('[data-settings-pane="financial"]');
-  if (finPane) { initFinancialPane(); }
   if (auditPane) { try { initAuditPane(); } catch (e) { console.error("audit", e); } }
 
   var finPane = document.querySelector('[data-settings-pane="financial"]');
@@ -85,6 +81,11 @@ function escapeHtml(s) {
 
 function fancySelect(select) {
   "use strict";
+  // don't double-wrap (called twice due to duplicate init + ui-fixes)
+  if (select.classList.contains("users-select-native") || select.classList.contains("ui-fancy-native")
+      || (select.parentElement && (select.parentElement.classList.contains("users-select") || select.parentElement.classList.contains("ui-fancy-wrap")))) {
+    return { sync: function(){ select.dispatchEvent(new Event("change",{bubbles:true})); }, setValue: function(v){ select.value=v; } };
+  }
   function svg(points) {
     var d = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     d.setAttribute("viewBox", "0 0 24 24");
