@@ -261,6 +261,7 @@
   function addLineRow(line) {
     line = line || {};
     const tpl = $("[data-line-tpl]");
+    if (!tpl) throw new Error("Line template is missing. Refresh the page and try again.");
     const row = tpl.cloneNode(true);
     row.removeAttribute("data-line-tpl");
     row.removeAttribute("hidden");
@@ -311,12 +312,21 @@
   }
 
   /* ---- dialog lifecycle ---- */
+  let lineTplHtml = null;   // cached copy of the hidden line-row template
+
   function resetTxnForm() {
     const form = $("[data-txn-form]");
     form.reset();
     form.elements.transaction_date.value = new Date().toISOString().slice(0, 10);
     $("[data-txn-error]").hidden = true;
-    $("[data-txn-lines]").innerHTML = "";
+    // Preserve the hidden line template: it lives inside [data-txn-lines],
+    // which is wiped below. Cache it once and re-insert it so future
+    // addLineRow() calls always find [data-line-tpl].
+    if (lineTplHtml === null) {
+      const tpl = $("[data-line-tpl]");
+      lineTplHtml = tpl ? tpl.outerHTML : "";
+    }
+    $("[data-txn-lines]").innerHTML = lineTplHtml;
     $("[data-txn-dialog-title]").textContent = "New transaction";
     populateHeaderDimensions();
     // seed two empty lines for a journal entry
@@ -362,7 +372,7 @@
       form.elements.client.value = t.client || "";
       form.elements.supplier.value = t.supplier || "";
       $("[data-txn-error]").hidden = true;
-      $("[data-txn-lines]").innerHTML = "";
+      $("[data-txn-lines]").innerHTML = lineTplHtml;   // re-insert template after wipe
       (t.lines || []).forEach((l) => addLineRow({
         id: l.id, account: l.account, description: l.description, project: l.project, debit: Number(l.debit), credit: Number(l.credit),
       }));
@@ -442,9 +452,15 @@
       dialogClose($("[data-txn-dialog]"));
       await refreshAll();
     } catch (e) {
-      // Partial-failure handling: header may already exist as DRAFT.
+      // Partial-failure handling: the header (and likely the lines) already
+      // exist as a DRAFT. The two common failures are an out-of-balance
+      // entry (lines saved fine, post rejected) and a genuine line-save
+      // error -- the message must not conflate them.
       if (state.txn.id && state.txn.mode !== "edit") {
-        showTxnError(new Error(`Header created (${state.txn.id}) but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
+        const unbalanced = /out-of-balance|out of balance|unbalanced/i.test(e.message);
+        showTxnError(new Error(unbalanced
+          ? `Saved as DRAFT — the entry is out of balance (debits ≠ credits), so it can't be posted yet. Add a matching line on the other side so the totals match, then open it and post.`
+          : `Header created but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
       } else {
         showTxnError(e);
       }

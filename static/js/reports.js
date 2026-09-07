@@ -126,23 +126,124 @@
     }
     renderAccounts("[data-pnl-revenue-accounts]", data.revenue?.accounts);
     renderAccounts("[data-pnl-expense-accounts]", data.expenses?.accounts);
+
+    renderPLDonut(data);
   }
 
-  /* ---- Trend bar chart ---- */
-  function renderTrend(series) {
-    const container = $("[data-trend-chart]");
-    if (!series || !series.length) {
-      container.innerHTML = '<div class="empty-chart">No trend data available. Post transactions to see monthly trends.</div>';
+  function renderPLDonut(data) {
+    const revenue = Math.max(Number(data.revenue?.total || 0), 0);
+    const expenses = Math.max(Number(data.expenses?.total || 0), 0);
+    const net = Number(data.net_profit || 0);
+    const total = revenue + expenses + Math.max(net, 0);
+    const hole = $("[data-pnl-donut]");
+    const legendEl = $("[data-pnl-donut-legend]");
+    const netEl = $("[data-pnl-donut-net]");
+    if (!hole || !legendEl) return;
+
+    if (total <= 0) {
+      hole.style.background = "conic-gradient(#dfe8e3 0deg, #dfe8e3 360deg)";
+      if (netEl) netEl.textContent = money(net);
+      legendEl.innerHTML = "";
       return;
     }
-    const maxVal = Math.max(...series.flatMap((r) => [Number(r.revenue), Number(r.expense)]), 1);
+    const revDeg = (revenue / total) * 360;
+    const expDeg = revDeg + (expenses / total) * 360;
+    hole.style.background = `conic-gradient(#0a8f85 0deg, #0a8f85 ${revDeg}deg, #c0604a ${revDeg}deg, #c0604a ${expDeg}deg, #d9a03f ${expDeg}deg, #d9a03f 360deg)`;
+    if (netEl) netEl.textContent = money(net);
 
+    const legendItems = [
+      { color: "#0a8f85", label: "Revenue", value: money(revenue) },
+      { color: "#c0604a", label: "Expenses", value: money(expenses) },
+      { color: "#d9a03f", label: "Net profit", value: money(net) },
+    ];
+    legendEl.innerHTML = legendItems.map((l) =>
+      `<div class="legend-item"><i style="background:${l.color}"></i>${esc(l.label)}<strong>${l.value}</strong></div>`
+    ).join("");
+  }
+
+  /* ---- Trend bar + net line chart ---- */
+  function renderTrend(series) {
+    const container = $("[data-trend-chart]");
+    const yLabels = $("[data-trend-y]");
+    const xLabels = $("[data-trend-x]");
+    if (!container) return;
+
+    if (!series || !series.length) {
+      container.innerHTML = '<div class="empty-chart">No trend data available. Post transactions to see monthly trends.</div>';
+      if (yLabels) yLabels.innerHTML = "";
+      if (xLabels) xLabels.innerHTML = "";
+      $("[data-trend-period]").textContent = "Full period";
+      return;
+    }
+
+    const months = series.map((r) => r.month);
+    $("[data-trend-period]").textContent = months.length > 1
+      ? `${months[0]} – ${months[months.length - 1]}`
+      : months[0];
+
+    const values = series.flatMap((r) => [Number(r.revenue), Number(r.expense)]);
+    const maxVal = Math.max(...values, 1);
+    const ticks = 4;
+    const step = maxVal / ticks;
+
+    /* Y-axis gridline labels (money shortened) */
+    if (yLabels) {
+      yLabels.innerHTML = Array.from({ length: ticks + 1 }, (_, i) => {
+        const v = step * (ticks - i);
+        return `<span>${shortMoney(v)}</span>`;
+      }).join("");
+    }
+
+    /* X-axis month labels */
+    if (xLabels) {
+      xLabels.innerHTML = months.map((r) => `<span>${esc(monthLabel(r))}</span>`).join("");
+    }
+
+    /* Bars: revenue + expense */
     container.innerHTML = series.map((r) => {
       const revH = Math.max((Number(r.revenue) / maxVal) * 100, 2);
       const expH = Math.max((Number(r.expense) / maxVal) * 100, 2);
       const label = r.month?.slice(5) || r.month;
       return `<div class="bar-group"><div class="bars"><span class="bar revenue" style="height:${revH}%" title="Revenue: ${money(r.revenue)}"></span><span class="bar expense" style="height:${expH}%" title="Expense: ${money(r.expense)}"></span></div><span class="bar-label">${esc(label)}</span></div>`;
     }).join("");
+
+    /* Net profit line overlay (SVG polyline over the chart area) */
+    drawNetLine(series, maxVal);
+  }
+
+  function shortMoney(v) {
+    const n = Math.abs(Number(v || 0));
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`;
+    return `$${n.toFixed(0)}`;
+  }
+
+  function monthLabel(month) {
+    const [y, m] = String(month || "").split("-");
+    const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return names[Number(m) - 1] || "";
+  }
+
+  function drawNetLine(series, maxVal) {
+    const container = $("[data-trend-chart]");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("style", "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible");
+    const points = series.map((r, i) => {
+      const x = (i + 0.5) / series.length * 100;
+      const y = 100 - (Number(r.revenue) - Number(r.expense)) / maxVal * 100;
+      return `${x},${y}`;
+    });
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    poly.setAttribute("points", points.join(" "));
+    poly.setAttribute("fill", "none");
+    poly.setAttribute("stroke", "#d9a03f");
+    poly.setAttribute("stroke-width", "2");
+    poly.setAttribute("vector-effect", "non-scaling-stroke");
+    poly.setAttribute("clip-path", "none");
+    svg.appendChild(poly);
+    container.appendChild(svg);
   }
 
   /* ---- Aging panel ---- */
@@ -160,12 +261,26 @@
     const tbody = $("[data-aging-rows]");
     if (!allInvoices.length) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><b>No outstanding invoices</b></td></tr>';
-      return;
+    } else {
+      allInvoices.sort((a, b) => b.days_overdue - a.days_overdue);
+      tbody.innerHTML = allInvoices.map((inv) =>
+        `<tr><td>${esc(inv.invoice_number)}</td><td>${esc(inv.client_name || "—")}</td><td>${esc(inv.project || "—")}</td><td>${esc(inv.due_date)}</td><td>${inv.days_overdue}</td><td>${money(inv.outstanding_balance)}</td></tr>`
+      ).join("");
     }
-    allInvoices.sort((a, b) => b.days_overdue - a.days_overdue);
-    tbody.innerHTML = allInvoices.map((inv) =>
-      `<tr><td>${esc(inv.invoice_number)}</td><td>${esc(inv.client_name || "—")}</td><td>${esc(inv.project || "—")}</td><td>${esc(inv.due_date)}</td><td>${inv.days_overdue}</td><td>${money(inv.outstanding_balance)}</td></tr>`
-    ).join("");
+
+    renderAgingChart(buckets);
+  }
+
+  function renderAgingChart(buckets) {
+    const container = $("[data-aging-chart]");
+    if (!container) return;
+    const maxTotal = Math.max(...buckets.map((b) => Number(b.total || 0)), 1);
+    const labels = ["Current", "31–60", "61–90", "90+"];
+    container.innerHTML = buckets.map((b, i) => {
+      const h = Math.max((Number(b.total || 0) / maxTotal) * 100, maxTotal > 0 && Number(b.total) > 0 ? 4 : 2);
+      const overdue = i === buckets.length - 1 && Number(b.total) > 0;
+      return `<div class="aging-barchart-cat"><span class="aging-bar ${overdue ? "overdue" : ""}" style="height:${h}%" title="${labels[i]}: ${money(b.total)}"></span><span class="aging-bar-cat-label">${labels[i]}</span></div>`;
+    }).join("");
   }
 
   /* ---- Budget panel ---- */
@@ -187,6 +302,25 @@
     setT("[data-budget-total-actual]", totals.actual);
     setT("[data-budget-total-variance]", totals.variance);
     setT("[data-budget-total-remaining]", totals.remaining);
+
+    renderBudgetChart(rows);
+  }
+
+  function renderBudgetChart(rows) {
+    const container = $("[data-budget-chart]");
+    if (!container) return;
+    if (!rows.length) { container.innerHTML = ""; return; }
+    const maxVal = Math.max(...rows.flatMap((r) => [Number(r.budgeted), Number(r.actual)]), 1);
+    container.innerHTML = rows.map((r) => {
+      const budgetedW = Math.max((Number(r.budgeted) / maxVal) * 100, 2);
+      const actualW = Math.max((Number(r.actual) / maxVal) * 100, 2);
+      const over = Number(r.variance) < 0;
+      return `<div class="budget-chart-row">
+        <div class="bc-head"><span>${esc(r.project_name)} <small>(${esc(r.project_code)})</small></span><span>${over ? "Over budget" : "On track"} · ${money(r.variance)}</span></div>
+        <div class="bc-track"><span class="bc-budgeted" style="width:${budgetedW}%" title="Budgeted: ${money(r.budgeted)}"></span><span class="bc-actual" style="width:${actualW}%" title="Actual: ${money(r.actual)}"></span></div>
+        <div class="bc-legend-line"><span class="bc-lb">Budgeted ${money(r.budgeted)}</span><span class="bc-la">Actual ${money(r.actual)}</span></div>
+      </div>`;
+    }).join("");
   }
 
   /* ---- Ledger panel ---- */
@@ -234,7 +368,13 @@
     }
     $$("[data-panel]").forEach((el) => el.hidden = true);
     const panel = $(`[data-panel="${name}"]`);
-    if (panel) panel.hidden = false;
+    if (panel) {
+      panel.hidden = false;
+      requestAnimationFrame(() => {
+        const top = panel.getBoundingClientRect().top + window.pageYOffset - 70;
+        window.scrollTo({ top, behavior: "smooth" });
+      });
+    }
     state.activePanel = name;
   }
 
