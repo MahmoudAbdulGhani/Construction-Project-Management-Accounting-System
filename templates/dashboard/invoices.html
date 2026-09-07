@@ -1,6 +1,6 @@
 {% extends "dashboard/base_dashboard.html" %}{% load static %}
 {% block title %}Invoices | Cedar Control{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'css/invoices.css' %}?v=20260906-5">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'css/invoices.css' %}?v=20260906-6">{% endblock %}
 {% block dashboard_content %}
 <section class="page-heading"><div><p class="eyebrow">Accounts receivable &amp; payable</p><h1>Invoices</h1><p>Manage client, supplier, and contractor billing with project-level traceability.</p></div><div class="invoice-page-actions"><button class="primary-button" data-new-invoice="client">＋ Client invoice</button><button class="primary-button supplier-invoice-button" data-new-invoice="supplier">＋ Supplier invoice</button><button class="primary-button supplier-invoice-button" data-new-invoice="contractor">＋ Contractor invoice</button></div></section>
 <section class="module-stat-grid"><article class="module-stat tone-1"><span>Client receivables</span><strong data-metric="receivables">—</strong><em>Outstanding</em></article><article class="module-stat tone-2"><span>Overdue</span><strong data-metric="overdue">—</strong><em>Needs attention</em></article><article class="module-stat tone-3"><span>Payables (supplier + contractor)</span><strong data-metric="payables">—</strong><em>Outstanding</em></article><article class="module-stat tone-4"><span>Total invoices</span><strong data-metric="total">—</strong><em>Client, supplier, and contractor</em></article></section>

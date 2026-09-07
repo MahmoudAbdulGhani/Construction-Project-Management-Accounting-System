@@ -201,7 +201,9 @@ select.users-filter:focus-visible{outline:none;border-color:#0b7367;box-shadow:0
 .users-audit-entity:focus-within{border-color:#0b7367;box-shadow:0 0 0 3px rgba(11,115,103,.14)}
 .users-audit-entity-btn{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:none;background:transparent;padding:9px 12px;font-size:10px;font-family:inherit;color:var(--ink);cursor:pointer;border-radius:8px;text-align:left}
 .users-audit-entity-btn svg{flex:0 0 auto;color:#0b7367}
-.users-audit-entity-menu{position:fixed;z-index:300;background:#fff;border:1px solid #d8e2de;border-radius:12px;box-shadow:0 16px 40px rgba(9,31,28,.2)}
+.users-audit-entity-menu{position:fixed;z-index:400;background:#fff;border:1px solid #d8e2de;border-radius:12px;box-shadow:0 16px 40px rgba(9,31,28,.2)}
+.users-audit-entity-menu[hidden]{display:none !important}
+.users-audit-entity-menu:not([hidden]){display:block !important}
 .users-audit-entity-cats{position:relative;min-width:200px;padding:6px}
 .users-audit-entity-sub{position:absolute;top:0;left:100%;margin-left:4px;min-width:210px;max-height:60vh;overflow-y:auto;background:#fff;border:1px solid #d8e2de;border-radius:12px;box-shadow:0 16px 40px rgba(9,31,28,.2);padding:6px;z-index:1}
 .users-audit-entity-cat,.users-audit-entity-catsel,.users-audit-entity-opt{display:block;width:100%;text-align:left;border:none;background:transparent;padding:7px 10px;font-size:10px;font-family:inherit;border-radius:7px;cursor:pointer;color:var(--ink)}
