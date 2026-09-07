@@ -222,6 +222,21 @@
   /* ---- lookups for selects ---- */
   async function loadAccounts() {
     state.accounts = await all(`${E.accounts}?is_active=true`);
+    // refresh any already-open line rows that were created before accounts arrived (ui-fixes fancy)
+    refreshLineSelects();
+  }
+  function refreshLineSelects() {
+    $$("[data-txn-lines] select[data-line-account]").forEach(function (sel) {
+      var cur = sel.value;
+      sel.innerHTML = accountOptions(cur);
+      // if ui-fixes fancy is active, its MutationObserver will sync the button label/pop
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    $$("[data-txn-lines] select[data-line-project]").forEach(function (sel) {
+      var cur = sel.value;
+      sel.innerHTML = projectOptions(cur);
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   async function loadLookups() {
@@ -231,14 +246,26 @@
     state.projects = projects.status === "fulfilled" ? projects.value : [];
     state.clients = clients.status === "fulfilled" ? clients.value : [];
     state.suppliers = suppliers.status === "fulfilled" ? suppliers.value : [];
+    if (projects.status !== "fulfilled") console.warn("projects lookup failed:", projects.reason);
+    if (clients.status !== "fulfilled") console.warn("clients lookup failed:", clients.reason);
+    if (suppliers.status !== "fulfilled") console.warn("suppliers lookup failed:", suppliers.reason);
+    // if dialog already open, refresh its header selects so fancy pop isn't stuck empty
+    if ($("[data-txn-dialog]") && $("[data-txn-dialog]").open) {
+      populateHeaderDimensions();
+    }
+    refreshLineSelects();
   }
 
   function populateLookupSelect(selector, rows, label, valueKey, textFn) {
     const select = $(selector);
+    if (!select) { console.warn("populateLookupSelect: missing", selector); return; }
     const current = select.value;
     select.innerHTML = `<option value="">${esc(label)}</option>` +
       rows.map((r) => `<option value="${r[valueKey]}">${esc(textFn(r))}</option>`).join("");
     select.value = current || "";
+    // force ui-fixes fancy to re-render (was cached empty if opened before fetch)
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    console.log("populate", selector, "rows:", rows.length, "options now:", select.options.length);
   }
 
   function populateFilters() {
@@ -251,6 +278,10 @@
     populateLookupSelect("[data-txn-form] select[name=project]", state.projects, "Project (optional)", "id", (r) => `${r.code} — ${r.name}`);
     populateLookupSelect("[data-txn-form] select[name=client]", state.clients, "Client (optional)", "id", (r) => r.name);
     populateLookupSelect("[data-txn-form] select[name=supplier]", state.suppliers, "Supplier (optional)", "id", (r) => r.name);
+    // notify ui-fixes fancy to re-render (header was empty if dialog opened before lookups finished)
+    document.querySelectorAll("[data-txn-form] select[name=project], [data-txn-form] select[name=client], [data-txn-form] select[name=supplier]").forEach(function (s) {
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   /* ---- line editor ---- */

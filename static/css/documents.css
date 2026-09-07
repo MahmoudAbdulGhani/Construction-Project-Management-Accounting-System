@@ -19,6 +19,14 @@ select.quiet-button { font: inherit; cursor: pointer; }
 .doc-upload-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); background: var(--panel); border-radius: 14px 14px 0 0; }
 .doc-upload-head h2 { font-size: 18px; margin: 2px 0 0; }
 .doc-upload-head .eyebrow { color: #08736c !important; margin: 0; }
+/* heading + Upload document — match Procurement Receive goods (tall pill) */
+.page-heading .primary-button[data-doc-new] {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
 .doc-close { background: #eef2ef; border: 1px solid var(--line); color: var(--ink); width: 32px; height: 32px; border-radius: 9px; font-size: 18px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
 .doc-close:hover { background: #e2e8e5; }
 .doc-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 24px; }

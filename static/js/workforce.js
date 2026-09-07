@@ -2516,6 +2516,14 @@
        ========================================================= */
 
     function bindFilters() {
+        const sel = document.getElementById("workforce-status-filter");
+        if (sel) {
+            sel.addEventListener("change", () => {
+                state.statusFilter = sel.value;
+                renderRows();
+            });
+            return;
+        }
         $$("[data-status-filter]")
             .forEach(btn => {
                 btn.addEventListener(

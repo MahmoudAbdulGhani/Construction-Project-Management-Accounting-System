@@ -1375,6 +1375,9 @@ function initUsersPane() {
   var entityMenu = el("[data-audit-entity-menu]");
   var entityCats = el("[data-audit-entity-cats]");
   var entitySub = el("[data-audit-entity-sub]");
+  if (!entityToggle || !entityMenu) {
+    console.warn("audit entity dropdown missing", {entityToggle: !!entityToggle, entityMenu: !!entityMenu});
+  }
   var entityGroups = [];
   var clearBtn = el("[data-audit-clear]");
   var detailModal = el("[data-audit-detail-modal]");
@@ -1904,10 +1907,13 @@ function initUsersPane() {
     hideEntitySub();
   }
 
-  entityToggle.addEventListener("click", function (ev) {
-    ev.stopPropagation();
-    if (entityMenu.hidden) { openEntityMenu(); } else { closeEntityMenu(); }
-  });
+  if (entityToggle && entityMenu) {
+    entityToggle.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      if (entityMenu.hidden) { openEntityMenu(); } else { closeEntityMenu(); }
+    });
+  }
 
   entityCats.addEventListener("mouseover", function (ev) {
     var cat = ev.target.closest("[data-audit-entity-cat]");

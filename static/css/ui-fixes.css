@@ -1,0 +1,355 @@
+/* ui-fixes — Global unification for calendars & dropdowns
+   Reference: /settings → Audit trail calendar + Active/Inactive & Role dropdowns
+   Loaded on every dashboard page via base_dashboard.html — must win over page CSS. */
+
+/* ==========================================================
+   1. DROPDOWNS — make every <select> look like company_settings
+      .users-form-grid select + select.users-filter (audit)
+   ========================================================== */
+select,
+.users-form-grid select,
+.filterbar select,
+.module-table .filterbar select,
+.users-filter,
+.fin-rule-input select,
+.notif-window,
+.doc-upload-grid select,
+.partner-form-grid select,
+.employee-create-grid select,
+.payment-form-grid select,
+.po-form-grid select,
+.txn-form-grid select,
+.expense-form-grid select,
+.inventory #data-inventory-fields select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 1px solid #a5b8b3 !important;
+  border-radius: 8px !important;
+  background-color: #fff !important;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%230b7367' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 12px !important;
+  padding: 9px 32px 9px 11px !important;
+  font-size: 10px !important;
+  font-family: inherit !important;
+  color: var(--ink, #18352b) !important;
+  line-height: 1.4 !important;
+  cursor: pointer !important;
+  transition: border-color .15s, box-shadow .15s !important;
+  min-height: 34px !important;
+  box-sizing: border-box !important;
+}
+select:hover {
+  border-color: #0b7367 !important;
+}
+select:focus,
+select:focus-visible {
+  outline: none !important;
+  border-color: #0b7367 !important;
+  box-shadow: 0 0 0 3px rgba(11,115,103,.14) !important;
+}
+select:disabled {
+  background-color: #f4f7f5 !important;
+  color: #8aa29b !important;
+  cursor: not-allowed !important;
+  opacity: .85 !important;
+}
+
+/* quiet-button / quiet-select variants keep same geometry but no extra bg */
+select.quiet-button,
+select.quiet-select,
+.filterbar select.quiet-button,
+select.users-filter {
+  background-color: #fff !important;
+}
+
+/* Fancy dropdown — used by ui-fixes.js when it upgrades a native select
+   Reuses exact tokens from company_settings.css:102-118 */
+.ui-fancy-wrap { position: relative; display: block; }
+.ui-fancy-native { display: none !important; }
+.ui-fancy-btn {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid #a5b8b3; border-radius: 8px; background: #fff;
+  padding: 9px 36px 9px 11px; font-size: 10px; font-family: inherit;
+  color: var(--ink, #18352b); text-align: left; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  line-height: 1.4; transition: border-color .15s, box-shadow .15s;
+}
+.ui-fancy-btn:hover { border-color: #0b7367; }
+.ui-fancy-btn.is-open { border-color: #0b7367; box-shadow: 0 0 0 3px #0b736718; }
+.ui-fancy-btn svg { flex-shrink: 0; color: #0b7367; transition: transform .12s ease; }
+.ui-fancy-btn.is-open svg { transform: rotate(180deg); }
+.ui-fancy-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-fancy-pop {
+  position: fixed; min-width: 170px; background: #fff; border: 1px solid #d8e2de;
+  border-radius: 12px; box-shadow: 0 16px 40px rgba(9,31,28,.2); padding: 6px; z-index: 320;
+  max-height: 60vh; overflow-y: auto;
+}
+/* pop is fixed (viewport) but lives inside <dialog> top-layer so it is not clipped — keep dialog scrollable */
+dialog .ui-fancy-pop { z-index: 320 !important; }
+dialog .ui-fancy-wrap,
+.responsive-table .ui-fancy-wrap { position: relative; }
+.ui-fancy-pop[hidden] { display: none !important; }
+.ui-fancy-opt {
+  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+  border: 0; background: none; border-radius: 8px; padding: 8px 10px;
+  font-size: 10px; font-family: inherit; color: #33443f; text-align: left; cursor: pointer;
+}
+.ui-fancy-opt:hover { background: #0b736718; }
+.ui-fancy-opt.is-active { background: #e6f1ec; color: #0b7367; font-weight: 700; }
+.ui-fancy-opt svg { visibility: hidden; flex-shrink: 0; color: #0b7367; }
+.ui-fancy-opt.is-active svg { visibility: visible; }
+
+/* ==========================================================
+   2. CALENDARS — make every input[type=date] look like
+      audit trail .users-date-input + .users-date-toggle
+   ========================================================== */
+
+/* Native date inputs — visual parity with .users-date-input */
+input[type="date"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  border: 1px solid #a5b8b3 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  padding: 9px 11px !important;
+  font-size: 10px !important;
+  font-family: inherit !important;
+  color: var(--ink, #18352b) !important;
+  line-height: 1.4 !important;
+  box-sizing: border-box !important;
+  transition: border-color .15s, box-shadow .15s !important;
+  min-height: 34px !important;
+}
+/* Hide browser's default calendar icon so we use the audit icon consistently — keep the audit icon INSIDE */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-clear-button { display: none !important; }
+input[type="date"]::-moz-calendar-picker-indicator { display: none !important; }
+input[type="date"]:hover { border-color: #0b7367 !important; }
+input[type="date"]:focus {
+  outline: none !important;
+  border-color: #0b7367 !important;
+  box-shadow: 0 0 0 3px #0b736718 !important;
+}
+
+/* Wrapper injected by ui-fixes.js — keep audit icon INSIDE the field, remove the outside one */
+.ui-date-wrap {
+  position: relative;
+  display: flex !important;
+  width: 100% !important;
+  align-items: center;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.ui-date-wrap input[type="date"] {
+  width: 100% !important;
+  padding-right: 40px !important; /* room for inside icon */
+  cursor: pointer;
+}
+/* when wrapped, hide the fallback background — otherwise you get inside (button) + outside (bg) */
+.ui-date-wrap input[type="date"].ui-date-fallback {
+  background-image: none !important;
+}
+/* workforce grid: label is flex column, wrap must fill it */
+.employee-create-grid .ui-date-wrap { width: 100% !important; }
+/* Ensure date inside quiet-button label inherits */
+label.quiet-button .ui-date-wrap,
+.report-date-filter .ui-date-wrap,
+.accounting-date-filter .ui-date-wrap {
+  display: inline-flex;
+}
+
+.ui-date-toggle {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 34px; padding: 0; border: 0;
+  background: transparent;
+  color: #0b7367;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer !important;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+.ui-date-toggle:hover { color: #064f4a; }
+.ui-date-toggle svg { display: block; pointer-events: none; cursor: pointer !important; }
+.ui-date-wrap:hover .ui-date-toggle { color: #064f4a; }
+
+/* Fallback: if JS not loaded, show SVG as background on the input itself */
+input[type="date"].ui-date-fallback {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%230b7367' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px !important;
+  padding-right: 40px !important;
+}
+
+/* Shared calendar popover — identical to .users-calendar */
+.ui-calendar {
+  position: fixed;
+  z-index: 300;
+  width: 272px;
+  background: #fff;
+  border: 1px solid #d8e2de;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(9,31,28,.2);
+  padding: 14px;
+}
+dialog .ui-calendar {
+  z-index: 2;
+}
+.ui-calendar[hidden] { display: none !important; }
+.ui-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ui-cal-title { font-size: 11px; font-weight: 800; color: #18352b; }
+.ui-cal-nav {
+  border: 1px solid #d3dfda; border-radius: 6px; background: #f3f7f5; color: #0b7367;
+  width: 22px; height: 22px; display: grid; place-items: center; cursor: pointer; line-height: 1; font-size: 12px;
+}
+.ui-cal-nav:hover { background: #e2ece9; border-color: #0b7367; }
+.ui-cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; text-align: center; }
+.ui-cal-dow { font-size: 8px; font-weight: 800; color: #8aa29b; text-transform: uppercase; letter-spacing: .04em; padding: 4px 0; }
+.ui-cal-day {
+  border: 0; background: none; border-radius: 7px; font-size: 10px; color: #18352b;
+  padding: 5px 0; cursor: pointer;
+}
+.ui-cal-day:hover { background: #0b736718; }
+.ui-cal-day.out { color: #c0ccc7; pointer-events: none; }
+.ui-cal-day.today { box-shadow: inset 0 0 0 1px #0b7367; color: #0b7367; font-weight: 800; }
+.ui-cal-day.sel { background: linear-gradient(135deg,#0b7367,#064f4a); color: #fff; font-weight: 800; }
+.ui-cal-day.sel:hover { background: linear-gradient(135deg,#0b7367,#064f4a); }
+/* journal entry default today is pre-filled → matches .today + .sel ; keep border only like other calendars */
+.ui-cal-day.today.sel { background: #fff !important; color: #0b7367 !important; box-shadow: inset 0 0 0 1.5px #0b7367 !important; }
+
+/* Audit-style filter inputs inside toolbars keep narrow width */
+.users-toolbar-audit .ui-date-wrap input[type="date"] { width: 128px; }
+
+/* sidebar logout icon — pointer on hover/click like other X icons */
+.logout-icon,
+.logout-icon * {
+    cursor: pointer !important;
+}
+.logout-icon:hover { cursor: pointer !important; }
+
+/* sidebar vertical scroller — thin teal */
+.sidebar,
+.nav-area {
+    scrollbar-width: thin;
+    scrollbar-color: #0b7367 #0a3d2b;
+}
+.sidebar::-webkit-scrollbar,
+.nav-area::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-track,
+.nav-area::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb,
+.nav-area::-webkit-scrollbar-thumb { background: #0b7367; border-radius: 4px; }
+.sidebar::-webkit-scrollbar-thumb:hover,
+.nav-area::-webkit-scrollbar-thumb:hover { background: #095a52; }
+
+/* all scrollers site-wide — same thin teal style */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #0b7367 #e2eae7;
+}
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: #e2eae7; border-radius: 4px; }
+*::-webkit-scrollbar-thumb { background: #0b7367; border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: #095a52; }
+/* keep sidebar track transparent even with global */
+.sidebar::-webkit-scrollbar-track,
+.nav-area::-webkit-scrollbar-track { background: transparent !important; }
+
+/* ==========================================================
+   4. FILTERBAR — unify Projects, Approvals, Clients & Partners,
+      Procurement, Inventory, Workforce, Documents to Accounting/Expenses
+   ========================================================== */
+.filterbar,
+.panel .filterbar,
+.table-panel .filterbar,
+.module-table .filterbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 16px 18px !important;
+    background: linear-gradient(180deg,#f3f7f4,#e8f0ec) !important;
+    border-bottom: 1px solid #b5c8c2 !important;
+}
+.local-search,
+.panel .local-search,
+.table-panel .local-search,
+.module-table .local-search {
+    flex: 1 1 320px !important;
+    min-width: 280px !important;
+    max-width: 520px !important;
+    min-height: 38px !important;
+    border: 1px solid #95aea8 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    padding: 0 12px !important;
+    box-shadow: inset 0 1px 2px rgba(6,61,60,.04) !important;
+}
+.local-search input::placeholder,
+.panel .local-search input::placeholder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.filterbar:focus-within,
+.panel .filterbar:focus-within,
+.local-search:focus-within,
+.panel .local-search:focus-within,
+.module-table .local-search:focus-within {
+    border-color: #078078 !important;
+    box-shadow: 0 0 0 3px rgba(8,143,133,.12) !important;
+}
+
+/* ==========================================================
+   3. SEARCH — typed text must start at beginning, placeholder must vanish,
+      and entire field is clickable (not just left half)
+   ========================================================== */
+.local-search {
+    position: relative;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    cursor: text !important;
+}
+.local-search span {
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity .12s ease;
+}
+.local-search input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+.local-search:has(input:focus) span,
+.local-search:has(input:not(:placeholder-shown)) span {
+    display: none !important;
+}
+.local-search input::placeholder { opacity: 1; transition: opacity .12s; }
+.local-search input:focus::placeholder { opacity: 0; }
+.local-search input[type="search"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: transparent !important;
+    border: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+.local-search input[type="search"]::-webkit-search-decoration,
+.local-search input[type="search"]::-webkit-search-cancel-button,
+.local-search input[type="search"]::-webkit-search-results-button,
+.local-search input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none !important;
+    display: none !important;
+}
+.local-search input:focus { outline: none !important; box-shadow: none !important; }

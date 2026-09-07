@@ -45,7 +45,7 @@
       <label>Transaction date *<input name="transaction_date" type="date" required></label>
       <label class="full">Description *<textarea name="description" rows="2" required maxlength="2000" placeholder="Describe the entry"></textarea></label>
       <label>Reference<input name="reference" maxlength="255" placeholder="Optional reference"></label>
-      <label class="full">Dimensions<div class="txn-dim-row"><select name="project"><option value="">Project (optional)</option></select><select name="client"><option value="">Client (optional)</option></select><select name="supplier"><option value="">Supplier (optional)</option></select></div></label>
+      <div class="full txn-dim-group"><span class="txn-dim-label">Dimensions</span><div class="txn-dim-row"><select name="project"><option value="">Project (optional)</option></select><select name="client"><option value="">Client (optional)</option></select><select name="supplier"><option value="">Supplier (optional)</option></select></div></div>
     </div>
     <div class="txn-lines-wrap">
       <div class="register-heading"><div><h2>Lines</h2><p>Debits and credits must balance to post.</p></div></div>

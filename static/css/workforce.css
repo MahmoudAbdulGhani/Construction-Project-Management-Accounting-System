@@ -143,22 +143,31 @@
     color: #f5fffc;
 }
 
+/* unified with accounting / company_settings dialogs — transparent × like other pages */
 .employee-close {
-    background: #ffffff1f;
-    border: 1px solid #ffffff38;
-    color: #f5fffc;
+    background: transparent;
+    border: 0;
+    color: inherit;
     width: 32px;
     height: 32px;
     border-radius: 9px;
-    font-size: 18px;
+    font-size: 25px;
     line-height: 1;
     cursor: pointer;
     display: grid;
     place-items: center;
 }
-
 .employee-close:hover {
-    background: #ffffff36;
+    background: transparent;
+    color: inherit;
+    opacity: .75;
+}
+.employee-dialog-head .employee-close {
+    color: #bfe0da;
+}
+.employee-dialog-head .employee-close:hover {
+    color: #fff;
+    background: transparent;
 }
 
 .employee-dialog-shell .module-table {
@@ -289,8 +298,8 @@
 }
 
 .employee-create-head .employee-close {
-    background: #eef2ef;
-    border-color: var(--line);
+    background: transparent;
+    border: 0;
     color: var(--ink);
 }
 
@@ -466,14 +475,16 @@
    ========================================================= */
 
 .employee-table-actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: 128px 30px;
+    gap: 8px;
     align-items: center;
-    justify-content: flex-start;
-    gap: 7px;
+    justify-content: start;
 }
-
 .employee-status-select {
-    min-width: 108px;
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
     height: 30px;
     padding: 4px 26px 4px 9px;
     border: 1px solid var(--line);
@@ -485,6 +496,7 @@
     font-weight: 700;
     cursor: pointer;
     outline: none;
+    flex-shrink: 0;
 }
 
 .employee-status-select:hover {

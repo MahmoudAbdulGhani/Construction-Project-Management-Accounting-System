@@ -17,18 +17,22 @@
 
 <section class="panel table-panel module-table">
   <div class="filterbar">
-    <div class="local-search">⌕ <span>Search expenses…</span><input type="text" id="expense-search-input" placeholder="Description, project name or code" aria-label="Search expenses"></div>
-    <button class="quiet-button" data-status-filter="all">Status: All</button>
-    <button class="quiet-button" data-status-filter="PENDING">Pending</button>
-    <button class="quiet-button" data-status-filter="APPROVED">Approved</button>
-    <button class="quiet-button" data-status-filter="PAID">Paid</button>
-    <button class="quiet-button" data-status-filter="REJECTED">Rejected</button>
+    <div class="local-search">⌕ <span>Search expenses…</span><input type="text" id="expense-search-input" placeholder="" aria-label="Search expenses"></div>
+    <select id="expense-status-filter" class="quiet-select" aria-label="Filter by status">
+      <option value="all">Status: All</option>
+      <option value="PENDING">Pending</option>
+      <option value="APPROVED">Approved</option>
+      <option value="PAID">Paid</option>
+      <option value="REJECTED">Rejected</option>
+    </select>
     <select id="expense-category-filter" class="quiet-select" aria-label="Filter by category">
       <option value="">Category: All</option>
     </select>
     <select id="expense-project-filter" class="quiet-select" aria-label="Filter by project">
       <option value="">Project: All</option>
     </select>
+  </div>
+  <div class="filterbar filterbar-dates">
     <label class="quiet-button">From <input type="date" data-date-from></label>
     <label class="quiet-button">To <input type="date" data-date-to></label>
   </div>
