@@ -30,6 +30,12 @@
 
 <section class="report-panel" data-panel="pnl" hidden>
   <div class="panel-head"><div><h2>Profit &amp; Loss</h2><p data-pnl-period>Full period</p></div></div>
+  <div class="pnl-chart-wrap">
+    <div class="donut-chart" data-pnl-donut>
+      <div class="donut-hole" data-pnl-donut-center><strong data-pnl-donut-net>$0.00</strong><span>Net profit</span></div>
+    </div>
+    <div class="donut-legend" data-pnl-donut-legend></div>
+  </div>
   <div class="pnl-summary">
     <div class="pnl-block"><h3>Revenue</h3><strong data-pnl-revenue>$0.00</strong><div class="pnl-accounts" data-pnl-revenue-accounts></div></div>
     <div class="pnl-block"><h3>Expenses</h3><strong data-pnl-expenses>$0.00</strong><div class="pnl-accounts" data-pnl-expense-accounts></div></div>
@@ -38,8 +44,18 @@
 </section>
 
 <section class="report-panel" data-panel="trend" hidden>
-  <div class="panel-head"><div><h2>Revenue &amp; expense trend</h2><p data-trend-period>Full period</p></div></div>
-  <div class="bar-chart" data-trend-chart></div>
+  <div class="panel-head"><div><h2>Revenue &amp; expense trend</h2><p data-trend-period>Full period</p></div>
+    <div class="chart-legend">
+      <span class="legend-item legend-revenue">Revenue</span>
+      <span class="legend-item legend-expense">Expense</span>
+      <span class="legend-item legend-net">Net profit</span>
+    </div>
+  </div>
+  <div class="trend-chart-wrap">
+    <div class="chart-y-labels" data-trend-y></div>
+    <div class="bar-chart" data-trend-chart></div>
+  </div>
+  <div class="trend-x-labels" data-trend-x></div>
 </section>
 
 <section class="report-panel" data-panel="aging" hidden>
@@ -50,6 +66,7 @@
     <div class="aging-bucket"><span>61–90 days</span><strong>$0.00</strong></div>
     <div class="aging-bucket"><span>90+ days</span><strong>$0.00</strong></div>
   </div>
+  <div class="aging-chart" data-aging-chart></div>
   <div class="panel-table responsive-table"><table>
     <thead><tr><th>Invoice</th><th>Client</th><th>Project</th><th>Due date</th><th>Days overdue</th><th>Outstanding</th></tr></thead>
     <tbody data-aging-rows><tr class="empty-row"><td colspan="6"><b>No outstanding invoices</b></td></tr></tbody>
@@ -68,6 +85,7 @@
     <span>Variance: <strong data-budget-total-variance>$0.00</strong></span>
     <span>Remaining: <strong data-budget-total-remaining>$0.00</strong></span>
   </div>
+  <div class="budget-chart" data-budget-chart></div>
 </section>
 
 <section class="report-panel" data-panel="ledger" hidden>
