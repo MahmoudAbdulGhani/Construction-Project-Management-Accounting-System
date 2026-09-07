@@ -18,7 +18,11 @@
 .procurement-dialog header{border-bottom:1px solid #b1c1bc;padding-bottom:16px;margin-bottom:20px}
 .procurement-dialog header h2{margin:2px 0 0}
 .procurement-dialog header button{border:0;background:transparent;font-size:25px;color:inherit;cursor:pointer}
-.procurement-dialog footer{justify-content:flex-end;border-top:1px solid #b1c1bc;padding-top:18px;margin-top:18px}
+.procurement-dialog footer{display:flex !important;gap:8px !important;flex-wrap:nowrap !important;align-items:center !important;justify-content:flex-end !important;border-top:1px solid #b1c1bc;padding-top:18px;margin-top:18px;white-space:nowrap}
+.procuredit-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
+.po-row-actions{display:flex !important;gap:6px !important;flex-wrap:nowrap !important;justify-content:flex-end !important;align-items:center !important;white-space:nowrap}
+.po-row-actions .row-action,.procurement-dialog footer button{flex-shrink:0 !important;white-space:nowrap !important}
+.panel.table-panel .responsive-table table th:last-child,.panel.table-panel .responsive-table table td:last-child{min-width:220px;white-space:nowrap}
 
 .receive-context{margin:5px 0 0;color:#69817c;font-size:10px}
 .receive-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
