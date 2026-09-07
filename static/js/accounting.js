@@ -264,21 +264,25 @@
       state.projects.map((p) => `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(`${p.code} — ${p.name}`)}</option>`).join("");
   }
 
-  function addLineRow(line) {
+  function txnLineRow(line) {
     line = line || {};
-    const tpl = $("[data-line-tpl]");
-    const row = tpl.cloneNode(true);
-    row.removeAttribute("data-line-tpl");
-    row.removeAttribute("hidden");
-    row.dataset.lineId = line.id || "";
+    return `<tr data-line-id="${esc(line.id || "")}">` +
+      `<td><select class="account-select" data-line-account>${accountOptions(line.account || "")}</select></td>` +
+      `<td><input class="line-input" data-line-description placeholder="Optional" value="${esc(line.description || "")}"></td>` +
+      `<td><select class="account-select" data-line-project>${projectOptions(line.project || "")}</select></td>` +
+      `<td><input type="number" class="line-amount" data-line-debit min="0" step="0.01" placeholder="0.00" value="${line.debit > 0 ? line.debit : ""}"></td>` +
+      `<td><input type="number" class="line-amount" data-line-credit min="0" step="0.01" placeholder="0.00" value="${line.credit > 0 ? line.credit : ""}"></td>` +
+      `<td><button type="button" class="line-remove" data-line-remove aria-label="Remove line">×</button></td>` +
+      `</tr>`;
+  }
 
-    row.querySelector("[data-line-account]").innerHTML = accountOptions(line.account || "");
-    row.querySelector("[data-line-description]").value = line.description || "";
-    row.querySelector("[data-line-project]").innerHTML = projectOptions(line.project || "");
-    row.querySelector("[data-line-debit]").value = line.debit > 0 ? line.debit : "";
-    row.querySelector("[data-line-credit]").value = line.credit > 0 ? line.credit : "";
+  function addLineRow(line) {
+    const body = $("[data-txn-lines]");
+    if (!body) throw new Error("Line table is missing. Refresh the page and try again.");
+    body.insertAdjacentHTML("beforeend", txnLineRow(line || {}));
+    const row = body.lastElementChild;
+
     row.querySelector("[data-line-remove]").onclick = () => { row.remove(); updateBalanceBar(); };
-    $("[data-txn-lines]").appendChild(row);
 
     row.querySelector("[data-line-debit]").addEventListener("input", () => {
       const d = Number(row.querySelector("[data-line-debit]").value || 0);
@@ -346,7 +350,13 @@
   /* ---- Create / Edit ---- */
   function openCreate() {
     state.txn = { id: null, mode: "create", editMode: "post" };
-    resetTxnForm();
+    try {
+      resetTxnForm();
+    } catch (e) {
+      $("[data-txn-lines]").innerHTML = "";
+      try { addLineRow(); addLineRow(); } catch (_) { /* keep the dialog openable */ }
+      showTxnError(e);
+    }
     dialogOpen($("[data-txn-dialog]"));
   }
 
@@ -376,7 +386,15 @@
       $("[data-txn-dialog-title]").textContent = `Edit ${t.transaction_number}`;
       dialogOpen($("[data-txn-dialog]"));
     } catch (e) {
-      alert(`Could not load transaction: ${e.message}`);
+      // Surface the failure inside the (always-opened) form dialog instead
+      // of a native browser alert, so the popup still appears.
+      const form = $("[data-txn-form]");
+      state.txn = { id, mode: "edit", editMode: "post" };
+      $("[data-txn-lines]").innerHTML = "";
+      try { addLineRow(); } catch (_) { /* keep the dialog openable */ }
+      if (form) form.elements.description.value = "";
+      showTxnError(new Error(`Could not load transaction: ${e.message}`));
+      dialogOpen($("[data-txn-dialog]"));
     }
   }
 
@@ -448,9 +466,15 @@
       dialogClose($("[data-txn-dialog]"));
       await refreshAll();
     } catch (e) {
-      // Partial-failure handling: header may already exist as DRAFT.
+      // Partial-failure handling: the header (and likely the lines) already
+      // exist as a DRAFT. The two common failures are an out-of-balance
+      // entry (lines saved fine, post rejected) and a genuine line-save
+      // error -- the message must not conflate them.
       if (state.txn.id && state.txn.mode !== "edit") {
-        showTxnError(new Error(`Header created (${state.txn.id}) but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
+        const unbalanced = /out-of-balance|out of balance|unbalanced/i.test(e.message);
+        showTxnError(new Error(unbalanced
+          ? `Saved as DRAFT — the entry is out of balance (debits ≠ credits), so it can't be posted yet. Add a matching line on the other side so the totals match, then open it and post.`
+          : `Header created but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
       } else {
         showTxnError(e);
       }

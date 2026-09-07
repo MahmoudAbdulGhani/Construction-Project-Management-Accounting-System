@@ -51,7 +51,7 @@
       <div class="register-heading"><div><h2>Lines</h2><p>Debits and credits must balance to post.</p></div></div>
       <div class="responsive-table"><table>
         <thead><tr><th>Account</th><th>Description</th><th>Project</th><th>Debit</th><th>Credit</th><th></th></tr></thead>
-        <tbody data-txn-lines><tr data-line-tpl hidden><td><select class="account-select" data-line-account><option value="">Select account…</option></select></td><td><input class="line-input" data-line-description placeholder="Optional"></td><td><select class="account-select" data-line-project><option value="">—</option></select></td><td><input type="number" class="line-amount" data-line-debit min="0" step="0.01" placeholder="0.00"></td><td><input type="number" class="line-amount" data-line-credit min="0" step="0.01" placeholder="0.00"></td><td><button type="button" class="line-remove" data-line-remove aria-label="Remove line">×</button></td></tr></tbody>
+        <tbody data-txn-lines></tbody>
       </table></div>
       <button type="button" class="quiet-button" data-add-line>＋ Add line</button>
     </div>
@@ -87,4 +87,4 @@
   </div>
 </dialog>
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/accounting.js' %}" defer></script>{% endblock %}
+{% block page_js %}<script src="{% static 'js/accounting.js' %}?v=20260907-dialog" defer></script>{% endblock %}
