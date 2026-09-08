@@ -4,6 +4,7 @@ DRF serializers for the ``documents`` app -- Document Management (CPMAS-25).
 from django.core.files.storage import default_storage
 from rest_framework import serializers
 
+from . import storage
 from .models import Document
 
 
@@ -42,6 +43,8 @@ class DocumentSerializer(serializers.ModelSerializer):
         return full_name or user.username
 
     def get_file_url(self, obj):
+        if storage.configured() and not obj.file_path.startswith("documents/"):
+            return storage.public_document_url(obj.file_path)
         return default_storage.url(obj.file_path)
 
     def validate_entity_type(self, value):

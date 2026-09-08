@@ -1,1 +1,633 @@
-{% extends "dashboard/base_dashboard.html" %}{% block title %}Inventory | Cedar Control{% endblock %}{% block dashboard_content %}<section class="page-heading"><div><p class="eyebrow">Materials control</p><h1>Inventory</h1><p>Track material availability, movement, and valuation across stores and project sites.</p></div><button class="primary-button">＋ Record movement</button></section><section class="module-stat-grid"><article class="module-stat tone-1"><span>Stock items</span><strong>{{ stock_items|default:"326" }}</strong><em>Live overview</em></article><article class="module-stat tone-2"><span>Low stock</span><strong>{{ low_stock|default:"18" }}</strong><em>Needs attention</em></article><article class="module-stat tone-3"><span>Inventory value</span><strong>{{ inventory_value|default:"$486K" }}</strong><em>Current period</em></article><article class="module-stat tone-4"><span>Site transfers today</span><strong>{{ transfers_today|default:"9" }}</strong><em>Updated today</em></article></section><section class="panel table-panel module-table"><div class="filterbar"><div class="local-search">⌕ <span>Search inventory…</span></div><button class="quiet-button">Store: All</button><button class="quiet-button">Stock: All</button></div><div class="responsive-table"><table><thead><tr><th>Material</th><th>SKU</th><th>Store / location</th><th>Available</th><th>Reserved</th><th>Unit cost</th><th>Status</th></tr></thead><tbody>{% for item in inventory_items %}<tr><td><strong>{{ item.name }}</strong><span>View movements</span></td><td>{{ item.sku }}</td><td>{{ item.location }}</td><td>{{ item.available }}</td><td>{{ item.reserved }}</td><td>{{ item.unit_cost }}</td><td><span class="status {{ item.status|slugify }}"><i></i>{{ item.status }}</span></td></tr>{% empty %}<tr><td><strong>Portland Cement 50kg</strong><span>View movements</span></td><td>MAT-CEM-001</td><td>Beirut Site Store</td><td>480 bags</td><td>120</td><td>$7.80</td><td><span class="status active"><i></i>Healthy</span></td></tr><tr><td><strong>Rebar Steel 16mm</strong><span>View movements</span></td><td>MAT-STL-016</td><td>Central Warehouse</td><td>2.4 tons</td><td>1.8</td><td>$680/t</td><td><span class="status at-risk"><i></i>Low stock</span></td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% extends "dashboard/base_dashboard.html" %}
+{% load static %}
+
+{% block title %}Inventory | Cedar Control{% endblock %}
+
+{% block page_css %}
+<link rel="stylesheet" href="{% static 'css/inventory.css' %}">
+{% endblock %}
+
+{% block dashboard_content %}
+
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Stock control</p>
+
+        <h1>Inventory</h1>
+
+        <p>
+            Track materials, warehouse quantities, project usage,
+            transfers, and low-stock alerts.
+        </p>
+    </div>
+
+    <div class="inventory-heading-actions">
+        <button
+            class="primary-button"
+            type="button"
+            data-inventory-action="material"
+        >
+            ＋ Add material
+        </button>
+
+        <button
+            class="primary-button"
+            type="button"
+            data-inventory-action="warehouse"
+        >
+            ＋ New warehouse
+        </button>
+
+        <button
+            class="primary-button"
+            type="button"
+            data-inventory-action="movement"
+        >
+            ＋ Record movement
+        </button>
+    </div>
+</section>
+
+
+<!-- Inventory overview -->
+
+<section class="module-stat-grid inventory-stat-grid">
+
+    <article class="module-stat tone-1">
+        <span>Inventory value</span>
+
+        <strong data-inventory-metric="value">
+            —
+        </strong>
+
+        <em>Live overview</em>
+    </article>
+
+
+    <article class="module-stat tone-2">
+        <span>Materials</span>
+
+        <strong data-inventory-metric="items">
+            —
+        </strong>
+
+        <em>Tracked stock items</em>
+    </article>
+
+
+    <article class="module-stat tone-3">
+        <span>Low-stock alerts</span>
+
+        <strong data-inventory-metric="low">
+            —
+        </strong>
+
+        <em>Needs attention</em>
+    </article>
+
+
+    <article class="module-stat tone-4">
+        <span>Warehouses</span>
+
+        <strong data-inventory-metric="warehouses">
+            —
+        </strong>
+
+        <em>Active locations</em>
+    </article>
+
+</section>
+
+
+<!-- Inventory table -->
+
+<section class="panel table-panel module-table inventory-table-panel">
+
+    <div class="filterbar">
+
+        <div class="local-search">
+            ⌕
+            <input
+                data-inventory-search
+                type="search"
+                placeholder="Search inventory…"
+                aria-label="Search inventory"
+            >
+        </div>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-warehouse
+            aria-label="Filter by warehouse"
+        >
+            <option value="">
+                Store: All
+            </option>
+        </select>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-stock
+            aria-label="Filter stock status"
+        >
+            <option value="">
+                Status: All
+            </option>
+
+            <option value="low">
+                Low stock
+            </option>
+
+            <option value="healthy">
+                In stock
+            </option>
+        </select>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-inventory-category
+            aria-label="Filter by category"
+        >
+            <option value="">
+                Category: All
+            </option>
+        </select>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>SKU</th>
+                    <th>Warehouse</th>
+                    <th>Available</th>
+                    <th>Reserved</th>
+                    <th>Reorder level</th>
+                    <th>Status</th>
+                    <th>Movement</th>
+                </tr>
+            </thead>
+
+
+            <tbody data-inventory-rows>
+
+                <tr>
+                    <td colspan="8">
+                        <strong>Loading inventory…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+
+    <!-- Pagination -->
+
+    <div class="inventory-pagination">
+
+        <span data-inventory-count>
+            Showing <strong data-inventory-visible-count>0</strong>
+            of <strong data-inventory-total-count>0</strong>
+            records
+        </span>
+
+        <div class="inventory-pagination-controls">
+
+            <button
+                class="quiet-button"
+                type="button"
+                data-inventory-prev
+                disabled
+            >
+                Previous
+            </button>
+
+            <div data-inventory-pages>
+                <!-- Pages generated by JS -->
+            </div>
+
+            <button
+                class="quiet-button"
+                type="button"
+                data-inventory-next
+                disabled
+            >
+                Next
+            </button>
+
+        </div>
+
+    </div>
+
+</section>
+<!-- Stock movements -->
+
+<section class="panel table-panel module-table inventory-movements-panel">
+
+    <div class="inventory-movements-heading">
+
+        <div>
+            <p class="eyebrow">Stock activity</p>
+            <h2>Recent stock movements</h2>
+        </div>
+
+        <span data-inventory-movement-count>
+            0 movements
+        </span>
+
+    </div>
+
+
+    <div class="filterbar movements-filterbar">
+
+        <div class="local-search">
+            ⌕
+            <input
+                data-movement-search
+                type="search"
+                placeholder="Search movements…"
+                aria-label="Search stock movements"
+            >
+        </div>
+
+
+        <!-- Keep this selector because inventory.js uses it -->
+        <select
+            class="quiet-button"
+            data-movement-type
+            aria-label="Filter by movement direction"
+        >
+            <option value="">
+                Movement: All
+            </option>
+
+            <option value="IN">
+                In
+            </option>
+
+            <option value="OUT">
+                Out
+            </option>
+        </select>
+
+
+        <div class="inline-date-range">
+
+            <label>
+                From
+                <input
+                    type="date"
+                    data-movement-date-from
+                    aria-label="Movements from date"
+                >
+            </label>
+
+            <label>
+                To
+                <input
+                    type="date"
+                    data-movement-date-to
+                    aria-label="Movements to date"
+                >
+            </label>
+
+        </div>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>Warehouse</th>
+                    <th>Movement</th>
+                    <th>Quantity</th>
+                    <th>Reference</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+
+
+            <tbody data-inventory-movement-rows>
+
+                <tr>
+                    <td colspan="6">
+                        <strong>Loading movements…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+<!-- =========================================================
+     Inventory Management
+     ========================================================= -->
+
+<section class="panel inventory-management-panel">
+
+<div class="inventory-management-heading">
+
+    <div>
+        <p class="eyebrow">Inventory setup</p>
+        <h2>Materials & locations</h2>
+        <p>
+            Manage materials, material categories, and warehouses.
+        </p>
+    </div>
+
+</div>
+
+
+<!-- Management tabs -->
+
+<div class="inventory-management-tabs">
+
+    <button
+        type="button"
+        class="inventory-management-tab active"
+        data-inventory-management-tab="materials"
+    >
+        Materials
+    </button>
+
+    <button
+        type="button"
+        class="inventory-management-tab"
+        data-inventory-management-tab="categories"
+    >
+        Categories
+    </button>
+
+    <button
+        type="button"
+        class="inventory-management-tab"
+        data-inventory-management-tab="warehouses"
+    >
+        Warehouses
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     MATERIALS
+     ===================================================== -->
+
+<div
+    class="inventory-management-content active"
+    data-inventory-management-content="materials"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search materials…"
+                data-material-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="material"
+        >
+            ＋ Add material
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Material</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th>Unit</th>
+                    <th>Standard cost</th>
+                    <th>Minimum stock</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-material-management-rows>
+
+                <tr>
+                    <td colspan="8">
+                        <strong>Loading materials…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     CATEGORIES
+     ===================================================== -->
+
+<div
+    class="inventory-management-content"
+    data-inventory-management-content="categories"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search categories…"
+                data-category-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="category"
+        >
+            ＋ Add category
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-category-management-rows>
+
+                <tr>
+                    <td colspan="3">
+                        <strong>Loading categories…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     WAREHOUSES
+     ===================================================== -->
+
+<div
+    class="inventory-management-content"
+    data-inventory-management-content="warehouses"
+>
+
+    <div class="inventory-management-toolbar">
+
+        <div class="local-search">
+
+            ⌕
+
+            <input
+                type="search"
+                placeholder="Search warehouses…"
+                data-warehouse-management-search
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="primary-button"
+            data-inventory-action="warehouse"
+        >
+            ＋ Add warehouse
+        </button>
+
+    </div>
+
+
+    <div class="responsive-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Warehouse</th>
+                    <th>Location</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody data-warehouse-management-rows>
+
+                <tr>
+                    <td colspan="3">
+                        <strong>Loading warehouses…</strong>
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+</section>
+
+
+<!-- Inventory dialog -->
+
+<dialog data-inventory-dialog>
+
+    <form data-inventory-form>
+
+        <h2 data-inventory-title></h2>
+
+        <p
+            data-inventory-error
+            role="alert"
+        ></p>
+
+        <div data-inventory-fields></div>
+
+        <p>
+            <button
+                type="button"
+                class="quiet-button"
+                data-inventory-cancel
+            >
+                Cancel
+            </button>
+
+            <button
+                type="submit"
+                class="primary-button"
+                data-inventory-submit
+            >
+                Save
+            </button>
+        </p>
+
+    </form>
+
+</dialog>
+
+{% endblock %}
+
+
+{% block page_js %}
+<script src="{% static 'js/inventory.js' %}"></script>
+{% endblock %}

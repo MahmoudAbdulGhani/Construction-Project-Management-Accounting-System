@@ -23,3 +23,22 @@ img, svg { display: block; }
 /* The reference sidebar groups suppliers inside Clients & partners rather
    than exposing a separate destination. Keep the backend URL available. */
 .sidebar .nav-item[href="/suppliers/"] { display: none; }
+
+/* Keep every sidebar icon aligned and independent from font/encoding support. */
+.sidebar .nav-item > b {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+}
+
+.sidebar .nav-item > b svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

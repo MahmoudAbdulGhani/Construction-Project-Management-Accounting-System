@@ -158,6 +158,7 @@
       { label: "Client invoices", url: "/api/invoicing/client-invoices/", render: (r) => ({ title: r.invoice_number, sub: `${r.client_name || ""} ┬╖ ${r.status}` }) },
       { label: "Supplier invoices", url: "/api/invoicing/supplier-invoices/", render: (r) => ({ title: r.invoice_number, sub: `${r.supplier_name || ""} ┬╖ ${r.status}` }) },
       { label: "Materials", url: "/api/inventory/materials/", render: (r) => ({ title: r.name, sub: r.sku }) },
+      { label: "Tax rates", url: "/api/taxes/tax-rates/", render: (r) => ({ title: r.name, sub: `${r.tax_type} ┬╖ ${r.rate}%` }) },
     ];
 
     let requestToken = 0;

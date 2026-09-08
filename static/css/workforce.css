@@ -1,8 +1,585 @@
-/* Workforce page (v3 design).
-   The shared dashboard look (site-exact.css) provides page-heading,
-   module-stat-grid, filterbar, table-panel and responsive-table. These only
-   add small touches for the workforce directory. */
+/* =========================================================
+   Employee Management
+   ========================================================= */
 
-.local-search input{background:transparent;border:0;outline:0;flex:1;min-width:0;color:inherit;font:inherit}
+.row-click {
+    cursor: pointer;
+}
 
-.quiet-button.active{background:#08736c;border-color:#08736c;color:#f5fffc;font-weight:800}
+.local-search input {
+    background: transparent;
+    border: 0;
+    outline: 0;
+    flex: 1;
+    min-width: 0;
+    color: inherit;
+    font: inherit;
+}
+
+.quiet-button.active {
+    background: #08736c;
+    border-color: #08736c;
+    color: #f5fffc;
+    font-weight: 800;
+}
+
+
+/* =========================================================
+   Employee table actions
+   ========================================================= */
+
+.employee-status-select {
+    min-width: 118px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 9px;
+    background: #fbfcfb;
+    color: var(--ink);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    outline: none;
+}
+
+.employee-status-select:hover {
+    border-color: #16857c;
+}
+
+.employee-status-select:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c18;
+}
+
+.employee-status-select:disabled {
+    opacity: .6;
+    cursor: wait;
+}
+
+.employee-status-cell {
+    white-space: nowrap;
+}
+
+.employee-status-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.employee-rate {
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+
+/* =========================================================
+   Profile dialog
+   ========================================================= */
+
+.employee-dialog {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    width: min(940px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    margin: auto;
+}
+
+.employee-dialog::backdrop {
+    background: #13231cb5;
+}
+
+.employee-dialog-shell {
+    background: var(--panel);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px #0d1f1ab5;
+}
+
+.employee-dialog-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 22px 26px;
+    color: #f5fffc;
+    background: linear-gradient(
+        175deg,
+        #074e4b 0%,
+        #087168 58%,
+        #07534f 100%
+    );
+}
+
+.employee-dialog-head h2 {
+    font-size: 22px;
+    letter-spacing: -.01em;
+    margin: 2px 0 0;
+    color: #f5fffc;
+}
+
+.employee-dialog-head p {
+    color: #d7e5e0;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.employee-dialog-head .eyebrow {
+    color: #ffd98a !important;
+    margin: 0;
+}
+
+.employee-dialog-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.employee-dialog-actions .status {
+    background: #f5fffc20;
+    border-color: #f5fffc55;
+    color: #f5fffc;
+}
+
+/* unified with accounting / company_settings dialogs — transparent × like other pages */
+.employee-close {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    font-size: 25px;
+    line-height: 1;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+.employee-close:hover {
+    background: transparent;
+    color: inherit;
+    opacity: .75;
+}
+.employee-dialog-head .employee-close {
+    color: #bfe0da;
+}
+.employee-dialog-head .employee-close:hover {
+    color: #fff;
+    background: transparent;
+}
+
+.employee-dialog-shell .module-table {
+    margin: 20px 26px;
+}
+
+
+/* =========================================================
+   Employee profile fields
+   ========================================================= */
+
+.employee-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 20px 24px;
+}
+
+.employee-fields div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fbfcfb;
+}
+
+.employee-fields span {
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.employee-fields strong {
+    font-size: 13.5px;
+    color: var(--ink);
+    word-break: break-word;
+}
+
+.employee-tab-panel .filterbar .local-search span {
+    font-weight: 800;
+    color: var(--ink);
+}
+
+
+/* =========================================================
+   Assignment / phase actions
+   ========================================================= */
+
+.tab-action {
+    background: #eef2ef;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.tab-action:hover {
+    background: #e2e9e5;
+}
+
+.tab-action:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.tab-action.danger {
+    color: #b3261e;
+    border-color: #f0c4c1;
+}
+
+.tab-action.danger:hover {
+    background: #fff4f3;
+}
+
+
+/* =========================================================
+   Create / Edit employee overlay
+   ========================================================= */
+
+.employee-create {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    background: #13231cb5;
+    padding: 16px;
+}
+
+.employee-create[hidden] {
+    display: none;
+}
+
+.employee-create form {
+    background: var(--panel);
+    border-radius: 14px;
+    width: min(640px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    box-shadow: 0 24px 60px #0d1f1ab5;
+    overflow-x: hidden;
+}
+
+.employee-create-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--line);
+}
+
+.employee-create-head h2 {
+    font-size: 18px;
+    margin: 2px 0 0;
+}
+
+.employee-create-head .eyebrow {
+    color: #08736c !important;
+    margin: 0;
+}
+
+.employee-create-head .employee-close {
+    background: transparent;
+    border: 0;
+    color: var(--ink);
+}
+
+.employee-create-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 20px 24px;
+}
+
+.employee-create-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.employee-create-grid .full {
+    grid-column: 1 / -1;
+}
+
+.employee-create-grid input,
+.employee-create-grid textarea,
+.employee-create-grid select {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    background: #fbfcfb;
+    outline: none;
+    box-sizing: border-box;
+    font-family: inherit;
+    color: var(--ink);
+}
+
+.employee-create-grid input:focus,
+.employee-create-grid textarea:focus,
+.employee-create-grid select:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c18;
+}
+
+.employee-create-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--line);
+    background: #fafbfa;
+}
+
+.employee-create-actions .primary-button {
+    padding: 9px 16px;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #ffbd3f, #f28b2c);
+    box-shadow: none;
+    color: #183b38;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+
+/* =========================================================
+   Assignment form
+   ========================================================= */
+
+.employee-assign-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto auto;
+    gap: 12px;
+    padding: 20px 24px;
+    align-items: end;
+}
+
+.employee-assign-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.employee-assign-form input,
+.employee-assign-form select {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    background: #fbfcfb;
+    outline: none;
+    font-family: inherit;
+    color: var(--ink);
+}
+
+.employee-assign-form input:focus,
+.employee-assign-form select:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c18;
+}
+
+
+/* =========================================================
+   Loading states
+   ========================================================= */
+
+.employee-inline-message {
+    padding: 22px 24px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.employee-inline-message strong {
+    display: block;
+    color: var(--ink);
+    margin-bottom: 3px;
+}
+
+.employee-loading {
+    padding: 22px 24px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+
+@media (max-width: 850px) {
+    .employee-assign-form {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .employee-dialog-head,
+    .employee-create-head {
+        flex-direction: column;
+    }
+
+    .employee-fields,
+    .employee-create-grid,
+    .employee-assign-form {
+        grid-template-columns: 1fr;
+    }
+
+    .employee-create-grid .full {
+        grid-column: auto;
+    }
+
+    .employee-assign-form {
+        grid-template-columns: 1fr;
+    }
+
+    .employee-dialog-shell .module-table {
+        margin: 14px;
+    }
+
+    .employee-fields {
+        padding: 14px;
+    }
+
+    .employee-status-select {
+        min-width: 105px;
+    }
+}
+/* =========================================================
+   Employee table actions
+   ========================================================= */
+
+.employee-table-actions {
+    display: grid;
+    grid-template-columns: 128px 30px;
+    gap: 8px;
+    align-items: center;
+    justify-content: start;
+}
+.employee-status-select {
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+    height: 30px;
+    padding: 4px 26px 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfcfb;
+    color: var(--ink);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+}
+
+.employee-status-select:hover {
+    border-color: #16857c;
+}
+
+.employee-status-select:focus {
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c18;
+}
+
+.employee-status-select:disabled {
+    opacity: .55;
+    cursor: wait;
+}
+
+
+/* =========================================================
+   Employee edit icon
+   ========================================================= */
+
+.employee-edit-icon {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+
+    border: 1px solid var(--line);
+    border-radius: 8px;
+
+    background: #eef2ef;
+    color: var(--ink);
+
+    cursor: pointer;
+    transition:
+        background .15s ease,
+        border-color .15s ease,
+        color .15s ease,
+        transform .15s ease;
+}
+
+.employee-edit-icon:hover {
+    background: #e2e9e5;
+    border-color: #16857c;
+    color: #08736c;
+}
+
+.employee-edit-icon:active {
+    transform: scale(.96);
+}
+
+.employee-edit-icon svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+}
+
+.employee-edit-icon:focus-visible {
+    outline: none;
+    border-color: #16857c;
+    box-shadow: 0 0 0 3px #16857c18;
+}
+
+
+/* =========================================================
+   Profile dialog
+   Read-only — editing happens from the table
+   ========================================================= */
+
+.employee-dialog-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 700px) {
+    .employee-table-actions {
+        flex-wrap: wrap;
+    }
+
+    .employee-status-select {
+        min-width: 100px;
+    }
+}

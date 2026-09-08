@@ -1,7 +1,7 @@
 {% extends "dashboard/base_dashboard.html" %}
 {% load static %}
 {% block title %}Documents | Cedar Control{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'css/documents.css' %}">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'css/documents.css' %}?v=20260908-manual">{% endblock %}
 {% block dashboard_content %}
 <section class="page-heading">
   <div><p class="eyebrow">Records</p><h1>Documents</h1><p>Contracts, invoices, receipts, purchase orders, and change orders -- uploaded and linked to the record they belong to.</p></div>
@@ -40,14 +40,14 @@
 </section>
 
 <div class="doc-upload" data-doc-upload hidden>
-  <div class="doc-upload-head">
-    <div><p class="eyebrow">RECORDS</p><h2>Upload document</h2></div>
-    <button type="button" aria-label="Close" class="doc-close" data-doc-upload-close>×</button>
-  </div>
   <form data-doc-upload-form enctype="multipart/form-data">
+    <div class="doc-upload-head">
+      <div><p class="eyebrow">RECORDS</p><h2>Upload document</h2></div>
+      <button type="button" aria-label="Close" class="doc-close" data-doc-upload-close>×</button>
+    </div>
     <div class="doc-upload-grid">
       <label>Entity type *
-        <select name="entity_type" required>
+        <select name="entity_type" data-entity-type required>
           <option value="">Select entity type…</option>
           <option value="client">Client</option>
           <option value="supplier">Supplier</option>
@@ -61,13 +61,19 @@
         </select>
       </label>
       <label>Entity ID *
-        <input type="text" name="entity_id" placeholder="UUID of the record this belongs to" required>
+        <select name="entity_id" data-entity-select disabled>
+          <option value="">Select an entity type first…</option>
+        </select>
+        <button type="button" class="doc-manual-toggle" data-doc-manual-toggle>Or enter a UUID manually…</button>
       </label>
       <label>Document type
         <input type="text" name="document_type" placeholder="e.g. Contract, Invoice, Change order">
       </label>
       <label>File *
         <input type="file" name="file" required>
+      </label>
+      <label class="doc-manual-field" data-doc-manual-field hidden>Entity ID (manual override)
+        <input type="text" data-entity-id-manual placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
       </label>
     </div>
     <div class="doc-upload-actions">
@@ -76,5 +82,12 @@
     </div>
   </form>
 </div>
+<dialog class="doc-dialog" data-doc-error-dialog>
+  <div class="doc-dialog-shell">
+    <header><div><p class="eyebrow">DOWNLOAD</p><h2>Could not download file</h2></div><button type="button" class="doc-close" data-doc-error-close aria-label="Close">×</button></header>
+    <p class="form-error" data-doc-error-message></p>
+    <footer><button type="button" class="quiet-button" data-doc-error-close>Close</button></footer>
+  </div>
+</dialog>
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/documents.js' %}" defer></script>{% endblock %}
+{% block page_js %}<script src="{% static 'js/documents.js' %}?v=20260908-entity-manual" defer></script>{% endblock %}

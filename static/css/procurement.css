@@ -18,7 +18,15 @@
 .procurement-dialog header{border-bottom:1px solid #b1c1bc;padding-bottom:16px;margin-bottom:20px}
 .procurement-dialog header h2{margin:2px 0 0}
 .procurement-dialog header button{border:0;background:transparent;font-size:25px;color:inherit;cursor:pointer}
-.procurement-dialog footer{justify-content:flex-end;border-top:1px solid #b1c1bc;padding-top:18px;margin-top:18px}
+.procurement-dialog footer{display:flex !important;gap:8px !important;flex-wrap:nowrap !important;align-items:center !important;justify-content:flex-end !important;border-top:1px solid #b1c1bc;padding-top:18px;margin-top:18px;white-space:nowrap}
+.procuredit-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
+.po-row-actions{display:flex !important;gap:6px !important;flex-wrap:nowrap !important;justify-content:flex-end !important;align-items:center !important;white-space:nowrap}
+.po-row-actions .row-action,.procurement-dialog footer button{flex-shrink:0 !important;white-space:nowrap !important}
+.panel.table-panel .responsive-table table th:last-child,.panel.table-panel .responsive-table table td:last-child{min-width:220px;white-space:nowrap}
+
+.po-confirm-dialog{width:min(440px,calc(100vw - 32px))}
+.po-confirm-shell{padding:24px}
+.po-confirm-shell .confirm-message{color:#3c5752;font-size:12px;line-height:1.6;margin:16px 0 4px}
 
 .receive-context{margin:5px 0 0;color:#69817c;font-size:10px}
 .receive-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -82,3 +90,34 @@
 .procurement-row-view:before{content:"›";font-size:13px;line-height:1;color:#0a8a80}
 .procurement-row-view:hover{background:#d5e9e2;border-color:#0a8a80;color:#066059;box-shadow:0 4px 12px #0a625c22;transform:translateY(-1px)}
 .procurement-row-view:active{transform:translateY(0) scale(.96)}
+
+/* ---- Purchase Order create/edit dialog ---- */
+.po-dialog{width:min(880px,calc(100vw - 32px))}
+.po-context{margin:5px 0 0;color:#69817c;font-size:10px}
+.po-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.po-form-grid label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800}
+.po-form-grid input,.po-form-grid select{box-sizing:border-box;width:100%;border:1px solid #9fb2ad;border-radius:8px;background:#f5f7f5;padding:10px;font:inherit;color:#123f3d}
+.po-items-wrap{margin-top:18px}
+.po-items-wrap .register-heading{justify-content:space-between;gap:12px}
+.po-items-wrap .register-heading .quiet-button{white-space:nowrap}
+
+/* ---- Purchase Order line rows ---- */
+.po-line-row select{box-sizing:border-box;max-width:220px;width:100%;border:1px solid #9fb2ad;border-radius:8px;background:#f5f7f5;padding:8px;font:inherit;color:#123f3d}
+.line-input{width:90px;box-sizing:border-box;text-align:right;border:1px solid #9fb2ad;border-radius:8px;background:#f5f7f5;padding:8px 10px;font:inherit;color:#123f3d}
+.line-desc{width:100%;box-sizing:border-box;border:1px solid #9fb2ad;border-radius:8px;background:#f5f7f5;padding:8px 10px;font:inherit;color:#123f3d}
+.line-remove{border:1px solid #cf9a91;background:#fdf0ed;color:#8c2c20;border-radius:8px;width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.line-remove:hover{background:#f7dfd9;border-color:#b44638}
+.po-dialog .po-save:disabled{opacity:.6;cursor:wait}
+
+/* ---- PO row actions in the purchase orders table ---- */
+.po-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.row-action{border:1px solid #7fb3a9;background:#eaf3ef;color:#075e59;border-radius:8px;padding:5px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease}
+.row-action:hover{background:#d5e9e2;border-color:#0a8a80;color:#066059;box-shadow:0 4px 12px #0a625c22;transform:translateY(-1px)}
+.row-action:active{transform:translateY(0) scale(.96)}
+.row-action.danger{border-color:#cf9a91;background:#fdf0ed;color:#8c2c20}
+.row-action.danger:hover{background:#f7dfd9;border-color:#b44638}
+
+@media(max-width:720px){
+  .po-form-grid{grid-template-columns:1fr}
+  .po-row-actions{justify-content:flex-start}
+}

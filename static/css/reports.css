@@ -10,6 +10,11 @@
 
 /* ---- 5-card metrics row ---- */
 .reports-stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+/* tone-5 was missing in site-exact.css (only 1-4 defined) so 5th card was transparent */
+.reports-stat-grid .module-stat.tone-5{background:linear-gradient(145deg,#b9e4c6,#7ec8a3);border-color:#5aa17d;color:#143d29}
+.reports-stat-grid .module-stat.tone-5 span{color:#1e4a32}
+.reports-stat-grid .module-stat.tone-5 strong{color:#0f3323}
+.reports-stat-grid .module-stat.tone-5 em{background:#ffffff88;color:#1e4a32}
 
 /* ---- Report cards grid ---- */
 .report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
@@ -35,7 +40,21 @@
 .report-panel .panel-head h2{margin:0;font-size:16px;color:#123f3d}
 .report-panel .panel-head p{margin:4px 0 0;color:#607b76;font-size:10px}
 
-/* ---- P&L summary ---- */
+/* ---- P&L donut (SVG) ---- */
+.pnl-chart-wrap{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap;margin-bottom:20px}
+.donut-chart{width:200px;height:200px;position:relative}
+.donut-chart .donut-svg{width:100%;height:100%}
+.donut-slice-pct{font-size:13px;font-weight:800;fill:#fff}
+.donut-center-value{font-size:17px;font-weight:800;fill:#063d3c}
+.donut-center-value.loss{fill:#a23a31}
+.donut-center-label{font-size:9px;font-weight:800;fill:#607b76;text-transform:uppercase;letter-spacing:.5px}
+.donut-center-empty{font-size:9px;font-weight:800;fill:#8a9e99;text-transform:uppercase;letter-spacing:.5px}
+.donut-legend{display:flex;flex-direction:column;gap:10px;min-width:220px}
+.donut-legend .legend-item{display:flex;align-items:center;gap:8px;font-size:11px;color:#3c5752}
+.donut-legend .legend-item i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.donut-legend .legend-item .legend-share{color:#8a9e99;font-weight:800}
+.donut-legend .legend-item strong{margin-left:auto;padding-left:16px;color:#123f3d}
+
 .pnl-summary{display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:start}
 .pnl-block{background:#eaf3ef;border:1px solid #b5c5c0;border-radius:10px;padding:16px}
 .pnl-block h3{margin:0 0 6px;font-size:12px;color:#486460;text-transform:uppercase;letter-spacing:.5px}
@@ -48,15 +67,19 @@
 .pnl-profit{background:linear-gradient(135deg,#e8f5f0,#d5ece4);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .pnl-profit strong{font-size:24px;color:#063d3c}
 
-/* ---- Bar chart (trend) ---- */
-.bar-chart{display:flex;align-items:flex-end;gap:8px;height:220px;padding:16px 8px;border:1px solid #b5c5c0;border-radius:10px;background:#eaf3ef}
-.bar-chart .bar-group{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
-.bar-chart .bars{display:flex;gap:3px;align-items:flex-end;width:100%;height:180px}
-.bar-chart .bar{flex:1;border-radius:4px 4px 0 0;min-height:2px;transition:height .3s ease}
-.bar-chart .bar.revenue{background:linear-gradient(180deg,#0a8f85,#05635e)}
-.bar-chart .bar.expense{background:linear-gradient(180deg,#e4907a,#c0604a)}
-.bar-chart .bar-label{font-size:9px;color:#607b76;font-weight:800}
-.bar-chart .empty-chart{display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#8a9e99;font-size:12px}
+/* ---- Trend chart (single SVG) ---- */
+.trend-svg-wrap{border:1px solid #b5c5c0;border-radius:10px;background:#eaf3ef;padding:10px 12px}
+.trend-svg{width:100%;height:auto;display:block}
+.trend-svg .grid-line{stroke:#d5e0da;stroke-width:1}
+.trend-svg .grid-zero{stroke:#9cafaa;stroke-width:1.2}
+.trend-svg .axis-label{font-size:10px;font-weight:800;fill:#607b76}
+.trend-svg .bar-value{font-size:10px;font-weight:800;fill:#075e59}
+.trend-svg .bar-value-exp{fill:#a23a31}
+.trend-svg .trend-bar-rev{fill:#0a8f85}
+.trend-svg .trend-bar-exp{fill:#e4907a}
+.trend-svg .trend-net-line{stroke:#d9a03f;stroke-width:2.5;fill:none}
+.trend-svg .trend-net-dot{fill:#fff;stroke:#d9a03f;stroke-width:2}
+.trend-svg-wrap .empty-chart,.budget-chart .empty-chart{display:flex;align-items:center;justify-content:center;min-height:120px;color:#8a9e99;font-size:12px}
 
 /* ---- Aging buckets ---- */
 .aging-buckets{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
@@ -73,6 +96,67 @@
 /* ---- Table panel ---- */
 .panel-table{max-height:400px;overflow-y:auto}
 .panel-table table{min-width:600px}
+.panel-table tfoot .ledger-totals td{font-size:11px;font-weight:800;color:#063d3c;background:#eaf3ef;border-top:2px solid #7fb3a9;padding:10px 12px}
+
+/* ---- Chart legend ---- */
+.chart-legend{display:flex;gap:14px;align-items:center;font-size:10px;font-weight:800;color:#486460}
+.legend-item{display:inline-flex;align-items:center;gap:6px}
+.legend-item::before{content:"";width:10px;height:10px;border-radius:3px;display:inline-block}
+.legend-revenue::before{background:#0a8f85}
+.legend-expense::before{background:#e4907a}
+.legend-net::before{background:#d9a03f;border-radius:50%}
+.legend-debit::before{background:#0a8f85}
+.legend-credit::before{background:#d9a03f;border-radius:50%}
+
+/* ---- Aging columns (value on top of every bar) ---- */
+.aging-chart{display:flex;align-items:stretch;gap:10px;min-height:170px;padding:14px 12px 10px;border:1px solid #b5c5c0;border-radius:10px;background:#eaf3ef;margin-top:14px}
+.aging-chart .aging-barchart-cat{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px}
+.aging-chart .aging-val{font-size:11px;color:#063d3c}
+.aging-chart .aging-bar{width:55%;border-radius:4px 4px 0 0}
+.aging-chart .aging-bar.ab-0{background:linear-gradient(180deg,#0a8f85,#05635e)}
+.aging-chart .aging-bar.ab-1{background:linear-gradient(180deg,#e3b96a,#d9a03f)}
+.aging-chart .aging-bar.ab-2{background:linear-gradient(180deg,#e4907a,#d4775c)}
+.aging-chart .aging-bar.ab-3{background:linear-gradient(180deg,#c86a58,#a23a31)}
+.aging-chart .aging-bar-cat-label{font-size:9px;color:#607b76;font-weight:800}
+
+/* Aging pie row below bars */
+.aging-pie-row{display:flex;align-items:center;justify-content:center;gap:32px;flex-wrap:wrap;border:1px solid #b5c5c0;border-radius:10px;background:#f0f4f1;padding:16px;margin-top:14px}
+.aging-pie-row .donut-chart.small{width:160px;height:160px}
+.aging-pie-row .donut-legend{min-width:200px}
+
+/* ---- Budget vs actual (track = 100% of budget, fill = actual spend) ---- */
+.budget-chart{display:flex;flex-direction:column;gap:14px;margin-top:16px;padding:14px 16px;border:1px solid #b1c1bc;border-radius:10px;background:#f0f4f1}
+.budget-chart-row{display:flex;flex-direction:column;gap:6px}
+.budget-chart-row .bc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;color:#486460;font-weight:800}
+.budget-chart-row .bc-head small{color:#607b76;font-weight:700}
+.budget-chart-row .bc-chip{font-size:10px;font-weight:800;border-radius:20px;padding:3px 10px;white-space:nowrap}
+.budget-chart-row .bc-chip.under{background:#dcebe5;color:#075e59}
+.budget-chart-row .bc-chip.over{background:#f6d9d3;color:#a23a31}
+.budget-chart-row .bc-track{position:relative;height:20px;border-radius:6px;background:#dfe8e3;overflow:hidden}
+.budget-chart-row .bc-track .bc-actual{position:absolute;left:0;top:0;bottom:0}
+.budget-chart-row .bc-track .bc-actual.under{background:linear-gradient(90deg,#0a8f85,#34a49b)}
+.budget-chart-row .bc-track .bc-actual.over{background:linear-gradient(90deg,#e4907a,#a23a31)}
+.budget-chart-row .bc-legend-line{display:flex;gap:16px;flex-wrap:wrap;font-size:9px;color:#607b76;font-weight:800}
+
+/* ---- Ledger: donut + grouped debit/credit bars ---- */
+.ledger-chart-grid{display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start;margin-top:4px}
+.ledger-donut-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;border:1px solid #b5c5c0;border-radius:10px;background:#f0f4f1;padding:16px}
+.ledger-donut-wrap .donut-chart.small{width:180px;height:180px}
+.ledger-bars-wrap{border:1px solid #b5c5c0;border-radius:10px;background:#eaf3ef;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-height:220px}
+.ledger-bars-head{font-size:9px;font-weight:800;color:#607b76;text-transform:uppercase;letter-spacing:.4px;padding-bottom:6px;border-bottom:1px solid #cbd9d3}
+.ledger-bar-row{display:grid;grid-template-columns:160px 1fr;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #dfe8e3}
+.ledger-bar-row:last-child{border-bottom:0}
+.lb-label{display:flex;flex-direction:column;gap:1px;min-width:0}
+.lb-label b{font-size:11px;color:#063d3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-label small{font-size:9px;color:#607b76;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-tracks{display:flex;flex-direction:column;gap:5px}
+.lb-track{position:relative;height:18px;border-radius:5px;background:#dfe8e3;overflow:hidden;display:flex;align-items:center}
+.lb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+.lb-fill.lb-debit{background:linear-gradient(90deg,#0a8f85,#34a49b)}
+.lb-fill.lb-credit{background:linear-gradient(90deg,#d9a03f,#e8b96a)}
+.lb-track em{position:relative;z-index:1;margin-left:8px;font-style:normal;font-size:10px;font-weight:800;color:#063d3c;text-shadow:0 1px 0 #ffffffb0}
+.ledger-totals-bar{margin-top:14px}
+.donut-chart.small{width:180px;height:180px}
 
 /* ---- Reports pagination ---- */
 .reports-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:14px 20px;border-top:1px solid #b5c5c0}
@@ -84,12 +168,17 @@
   .report-grid{grid-template-columns:repeat(2,1fr)}
   .pnl-summary{grid-template-columns:1fr}
   .aging-buckets{grid-template-columns:repeat(2,1fr)}
+  .ledger-chart-grid{grid-template-columns:1fr}
+  .ledger-bar-row{grid-template-columns:120px 1fr}
 }
 @media(max-width:720px){
   .report-grid{grid-template-columns:1fr}
   .aging-buckets{grid-template-columns:1fr}
   .budget-totals{flex-direction:column;align-items:flex-start;gap:8px}
-  .bar-chart{height:160px}
+  .trend-svg-wrap{padding:6px}
+  .aging-chart .aging-bar{width:40%}
+  .pnl-chart-wrap{flex-direction:column;gap:20px}
+  .donut-chart{width:150px;height:150px}
 }
 @media(max-width:600px){
   .reports-stat-grid{grid-template-columns:1fr 1fr}

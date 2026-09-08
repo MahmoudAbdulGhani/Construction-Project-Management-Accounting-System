@@ -6,15 +6,16 @@ Implements ``Payment``, ``PaymentAllocation``, and ``Receipt``, matching
 the ``payments`` / ``payment_allocations`` / ``receipts`` tables in the
 approved schema (BRD 5.23 Payments, 5.24 Receipts).
 
-This is the layer that settles both AP (``invoicing.SupplierInvoice``)
-and AR (``invoicing.ClientInvoice``) invoices: a single Payment can fund
-one or more PaymentAllocations, each applied against exactly one
-invoice (either side), and ``payments.services.allocate_payment`` is the
-sole place an invoice's status advances to PARTIALLY_PAID/PAID as a
-result. "Outstanding balance is calculated from invoice totals minus
-payment allocations, not maintained as a manually editable value" (BRD
-5.23/5.24) is why neither invoice model stores a balance column --
-``payments.services.outstanding_balance`` computes it on read.
+This is the layer that settles both AP (``invoicing.SupplierInvoice``,
+``invoicing.ContractorInvoice``) and AR (``invoicing.ClientInvoice``)
+invoices: a single Payment can fund one or more PaymentAllocations, each
+applied against exactly one invoice (any of the three sides), and
+``payments.services.allocate_payment`` is the sole place an invoice's
+status advances to PARTIALLY_PAID/PAID as a result. "Outstanding balance
+is calculated from invoice totals minus payment allocations, not
+maintained as a manually editable value" (BRD 5.23/5.24) is why neither
+invoice model stores a balance column -- ``payments.services
+.outstanding_balance`` computes it on read.
 
 Note ``clients.models`` already has managed=False, read-only reflections
 of ``payments``/``payment_allocations`` (``ClientPayment``,
@@ -29,8 +30,8 @@ from django.db import models
 
 class Payment(models.Model):
     """
-    A single payment, either received from a client (INCOMING) or made
-    to a supplier (OUTGOING). Matches the ``payments`` table.
+    A single payment received from a client (INCOMING), or made to a
+    supplier, employee, or contractor (OUTGOING).
 
     Only one of client/supplier is expected to be set, matching its
     direction (validated in payments.serializers, not a DB CHECK
@@ -60,6 +61,11 @@ class Payment(models.Model):
     # block a historical payment record.
     client = models.ForeignKey('clients.Client', on_delete=models.SET_NULL, blank=True, null=True, related_name='payments')
     supplier = models.ForeignKey('suppliers.Supplier', on_delete=models.SET_NULL, blank=True, null=True, related_name='payments')
+    # Employees and contractors are unmanaged reflections of existing
+    # Supabase tables. UUID columns keep this managed ledger migration
+    # independent while serializer validation guarantees valid payees.
+    employee_id = models.UUIDField(blank=True, null=True, db_index=True)
+    contractor_id = models.UUIDField(blank=True, null=True, db_index=True)
 
     reference = models.CharField(max_length=255, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
@@ -96,8 +102,8 @@ class PaymentAllocation(models.Model):
     constraint (mirrored in payments.serializers.PaymentAllocationSerializer
     .validate as defense in depth, same pattern as
     accounting.TransactionLine's mirrored CHECKs): exactly one of
-    client_invoice/supplier_invoice must be set, never both, never
-    neither.
+    client_invoice/supplier_invoice/contractor_invoice must be set,
+    never two, never none.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -111,6 +117,9 @@ class PaymentAllocation(models.Model):
     supplier_invoice = models.ForeignKey(
         'invoicing.SupplierInvoice', on_delete=models.CASCADE, blank=True, null=True, related_name='payment_allocations',
     )
+    contractor_invoice = models.ForeignKey(
+        'invoicing.ContractorInvoice', on_delete=models.CASCADE, blank=True, null=True, related_name='payment_allocations',
+    )
 
     allocated_amount = models.DecimalField(max_digits=18, decimal_places=2)
 
@@ -123,20 +132,20 @@ class PaymentAllocation(models.Model):
         verbose_name_plural = 'Payment Allocations'
 
     def __str__(self):
-        invoice = self.client_invoice or self.supplier_invoice
+        invoice = self.client_invoice or self.supplier_invoice or self.contractor_invoice
         return f"{self.allocated_amount} of {self.payment.payment_number} -> {invoice}"
 
 
 class Receipt(models.Model):
     """
-    Proof-of-receipt for an INCOMING payment. Matches the ``receipts``
-    table, including its UNIQUE(payment_id) constraint (a payment gets
-    at most one receipt) -- enforced here via OneToOneField.
+    Proof-of-receipt for a Payment, in either direction. Matches the
+    ``receipts`` table, including its UNIQUE(payment_id) constraint (a
+    payment gets at most one receipt) -- enforced here via OneToOneField.
 
-    Restricted to INCOMING payments only (payments.services /
-    serializers validation, not a DB constraint the schema itself
-    doesn't have one): a receipt is proof of money received from a
-    client, not money paid out to a supplier.
+    Issued automatically whenever a payment is recorded (both INCOMING
+    and OUTGOING -- money received from a client and money paid out are
+    each receipted), and additionally available on demand through the
+    receipts API for payments that predate auto-issuance.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -29,9 +29,13 @@
 .txn-context{margin:5px 0 0;color:#69817c;font-size:10px}
 .txn-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .txn-form-grid .full{grid-column:1/-1}
-.txn-form-grid label,.txn-form-grid label>div{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800}
+.txn-form-grid label,.txn-form-grid label>div,.txn-dim-group{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:800}
+.txn-dim-label{font-size:11px;font-weight:800;color:#123f3d}
 .txn-form-grid input,.txn-form-grid select,.txn-form-grid textarea{box-sizing:border-box;width:100%;border:1px solid #9fb2ad;border-radius:8px;background:#f5f7f5;padding:10px;font:inherit;color:#123f3d}
 .txn-dim-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%}
+/* prevent label's click from activating all 3 wrapped selects at once */
+.txn-dim-group label{pointer-events:none}
+.txn-dim-row select,.txn-dim-row .ui-fancy-wrap,.txn-dim-row .ui-fancy-btn{pointer-events:auto}
 
 .form-error{border-radius:7px;background:#f7d7d1;color:#7f2018;padding:10px;margin:14px 0 0;white-space:pre-wrap}
 
@@ -70,8 +74,11 @@
 .accounting-confirm-shell{padding:24px}
 .confirm-message{color:#3c5752;font-size:12px;line-height:1.6;margin:16px 0 4px}
 
-/* ---- Row action buttons (mirror procurement-row-view) ---- */
-.accounting-row-action{border:1px solid #7fb3a9;background:#eaf3ef;color:#075e59;border-radius:8px;padding:5px 11px;font:inherit;font-size:10.5px;font-weight:800;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease;white-space:nowrap}
+/* ---- Row action buttons — spread on one line with enough space ---- */
+.payment-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center;justify-content:flex-start}
+.payment-actions .accounting-row-action{flex-shrink:0}
+.module-table td:last-child{white-space:nowrap;min-width:280px}
+.accounting-row-action{border:1px solid #7fb3a9;background:#eaf3ef;color:#075e59;border-radius:8px;padding:6px 12px;font:inherit;font-size:10.5px;font-weight:800;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease;white-space:nowrap}
 .accounting-row-action:hover{background:#d5e9e2;border-color:#0a8a80;color:#066059;box-shadow:0 4px 12px #0a625c22;transform:translateY(-1px)}
 .accounting-row-action:active{transform:translateY(0) scale(.96)}
 .accounting-row-action.post{background:linear-gradient(135deg,#0a8f85,#05635e);border-color:#05635e;color:#f4fffc}
@@ -134,3 +141,7 @@
   .module-table .filterbar{grid-template-columns:1fr}
   .module-table .local-search{grid-column:auto}
 }
+
+/* Source dimension (CPMAS-34): who/what generated the journal entry. */
+.module-table .source-tag{display:inline-block;padding:3px 9px;border:1px solid #a9cdc4;border-radius:999px;background:#e8f3ef;color:#0c5d57;font-size:10px;font-weight:700;line-height:1.2;white-space:nowrap}
+.module-table .source-tag.manual{background:#f3efe4;border-color:#d9c9a3;color:#7a5c17}

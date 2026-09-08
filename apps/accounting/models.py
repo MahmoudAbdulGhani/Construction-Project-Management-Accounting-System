@@ -25,6 +25,7 @@ Account is defined in this same app.
 """
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -75,6 +76,15 @@ class FinancialTransaction(models.Model):
     (DRAFT, POSTED, VOIDED) exactly. Only ever changed through
     ``accounting.services.post_transaction``/``void_transaction`` -- see
     those functions' docstrings for why a raw status PATCH isn't exposed.
+
+    ``source_type`` / ``source_id`` optionally link a journal entry back to
+    the operational document that generated it (a ClientInvoice,
+    SupplierInvoice, ContractorInvoice, Payment, or Expense). Manual entries
+    keep both NULL; system-generated entries carry both, and the pair must
+    be unique among non-voided entries (see Meta.constraints) so a document
+    can never be booked twice into the live ledger. Managed by
+    ``accounting.services.auto`` -- operational apps never touch these
+    directly.
     """
 
     class Status(models.TextChoices):
@@ -82,12 +92,28 @@ class FinancialTransaction(models.Model):
         POSTED = 'POSTED', 'Posted'
         VOIDED = 'VOIDED', 'Voided'
 
+    class SourceType(models.TextChoices):
+        CLIENT_INVOICE = 'CLIENT_INVOICE', 'Client Invoice'
+        SUPPLIER_INVOICE = 'SUPPLIER_INVOICE', 'Supplier Invoice'
+        CONTRACTOR_INVOICE = 'CONTRACTOR_INVOICE', 'Contractor Invoice'
+        PAYMENT = 'PAYMENT', 'Payment'
+        EXPENSE = 'EXPENSE', 'Expense'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     transaction_number = models.CharField(max_length=100, unique=True)
     transaction_date = models.DateField()
     description = models.TextField()
     reference = models.CharField(max_length=255, blank=True, null=True)
+
+    # Source tracking (BRD 5.22: financial transactions carry the document
+    # they came from). Both NULL for manual entries; both set -- and unique
+    # among non-voided entries -- for system-generated ones. source_id is
+    # the FKs' UUID of the generating document; there's deliberately no
+    # generic ContentType-style polymorphic reference, mirroring how each
+    # operational app already has its own journal-facing columns.
+    source_type = models.CharField(max_length=50, choices=SourceType.choices, blank=True, null=True, db_index=True)
+    source_id = models.UUIDField(blank=True, null=True)
 
     # All three dimension FKs are optional in the schema -- a journal
     # entry doesn't have to relate to a specific project/client/supplier
@@ -118,9 +144,27 @@ class FinancialTransaction(models.Model):
         ordering = ['-transaction_date', '-created_at']
         verbose_name = 'Financial Transaction'
         verbose_name_plural = 'Financial Transactions'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source_type', 'source_id'],
+                name='uniq_source_pair',
+                condition=models.Q(
+                    source_type__isnull=False,
+                    source_id__isnull=False,
+                ) & ~models.Q(status='VOIDED'),
+            ),
+        ]
 
     def __str__(self):
         return self.transaction_number
+
+    def clean(self):
+        super().clean()
+        if (self.source_type is None) != (self.source_id is None):
+            raise ValidationError(
+                "source_type and source_id must both be set on a system-generated "
+                "journal entry, or both be blank on a manual entry."
+            )
 
 
 class TransactionLine(models.Model):

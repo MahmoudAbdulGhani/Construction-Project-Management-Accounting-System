@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'taxes',
     'suppliers',
     'users',
+    'audit',
     'inventory',
     'purchasing',
     'invoicing',
@@ -98,14 +99,17 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'users.middleware.JwtCookieRefreshMiddleware',
     'users.middleware.AppUserSessionMiddleware',
+    'audit.middleware.AuditContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'construction.middleware.NoStoreHtmlMiddleware',
 ]
 
 ROOT_URLCONF = 'construction.urls'
@@ -177,9 +181,25 @@ TEST_RUNNER = 'construction.test_runner.AppsDirTestRunner'
 # are only needed for the runtime logo upload in company_settings -- the
 # fallback public display path (company_logo context processor) does not
 # require them.
+# SUPABASE_SERVICE_ROLE_KEY (Project Settings -> API -> service_role secret)
+# is preferred for uploads: it bypasses Storage RLS entirely, so the logo
+# bucket never needs a public INSERT policy. It is used server-side only and
+# must never be exposed client-side.
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_LOGO_BUCKET = os.getenv("SUPABASE_LOGO_BUCKET", "logo")
+
+# Supabase Storage also holds uploaded documents (documents app), in a
+# dedicated bucket, using the same REST-object pattern as the logo upload
+# (service-role auth for writes; the public URL for reads/display).
+# SUPABASE_DOCUMENT_STORAGE is an explicit flag, not inferred from the keys
+# alone, so tests can pin local-disk (default_storage/MEDIA_ROOT) behavior
+# regardless of what .env happens to contain.
+SUPABASE_DOCUMENTS_BUCKET = os.getenv("SUPABASE_DOCUMENTS_BUCKET", "documents")
+SUPABASE_DOCUMENT_STORAGE = bool(
+    SUPABASE_URL and (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)
+)
 
 
 # Password validation
@@ -234,12 +254,31 @@ USE_TZ = False
 
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+# Collected output for production (Dockerfile.collectstatic / run
+# collectstatic). WhiteNoise serves these files in production; dev
+# runserver serves STATICFILES_DIRS directly via staticfiles.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # User-uploaded files (documents app, CPMAS-25). Local disk storage --
 # there's no S3/Supabase Storage integration in this project yet, and
 # adding one isn't in scope for this ticket; MEDIA_ROOT is git-ignored.
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Filesystem storage backends. The staticfiles entry uses compressed
+# (gzip/brotli) cached files -- NOT ManifestStaticFilesStorage: manifest
+# mode requires every {% static %} reference to resolve at template render
+# time, which breaks local runserver until a collectstatic is run and
+# breaks any /static/ URL referenced dynamically from JS.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": MEDIA_ROOT},
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
@@ -321,5 +360,67 @@ SIMPLE_JWT = {
 # JWT placed in HttpOnly cookies (see users.authentication). Secure defaults
 # to False so local HTTP development works; set JWT_COOKIE_SECURE=True and
 # appropriate SameSite for production (HTTPS).
-JWT_COOKIE_SECURE = os.getenv('JWT_COOKIE_SECURE', '').lower() in ('1', 'true', 'yes', 'on')
+JWT_COOKIE_SECURE = os.getenv(
+    'JWT_COOKIE_SECURE', '0' if DEBUG else '1'
+).lower() in ('1', 'true', 'yes', 'on')
 JWT_COOKIE_SAMESITE = os.getenv('JWT_COOKIE_SAMESITE', 'Lax')
+
+
+# Production security (Phase 1 hardening).
+# https://docs.djangoproject.com/en/5.2/ref/settings/#module-django.conf.settings
+#
+# Every setting here defaults to the SAFE value when DEBUG=False (the
+# production mode) and the relaxed value when the app is running locally
+# in DEBUG=True -- so `runserver` keeps working over plain HTTP without
+# forcing anyone to assemble an env file, while a production deploy gets
+# HTTPS-only cookie + redirect behavior out of the box. Each can still be
+# forced explicitly via the documented env vars (see .env.example).
+
+def _security_flag(name, default):
+    """Parse an env flag with a project-wide default (matches DEBUG=False)."""
+    return os.getenv(name, '1' if default else '0').lower() in ('1', 'true', 'yes', 'on')
+
+
+_secure_cookies = _security_flag('DJANGO_SECURE_COOKIES', not DEBUG)
+_force_https = _security_flag('DJANGO_SECURE_SSL_REDIRECT', not DEBUG)
+
+# Behind a reverse proxy / load balancer, trust the forwarded scheme.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Redirect every http:// request to https:// in production. Off (by
+# default) in DEBUG so the dev server URL doesn't bounce to https.
+SECURE_SSL_REDIRECT = _force_https
+
+# HSTS is deliberately opt-in. Enable it only after HTTPS is confirmed on
+# every deployment hostname; an incorrect HSTS policy can make a site (or
+# its subdomains) unreachable until the browser policy expires.
+SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _security_flag(
+    'DJANGO_HSTS_INCLUDE_SUBDOMAINS', False
+)
+SECURE_HSTS_PRELOAD = _security_flag('DJANGO_HSTS_PRELOAD', False)
+
+# Browser-side protections.
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+CSRF_COOKIE_HTTPONLY = False
+
+# Cookies only travel over HTTPS in production; the session+cookie rows are
+# our auth, so NONE is never an acceptable SameSite value. 'Lax' stops the
+# CSRF token and session cookie from being sent on cross-site POSTs, which
+# is the zero-friction counterpart to the explicit CSRF enforcement in
+# users.authentication.
+SESSION_COOKIE_SECURE = _secure_cookies
+CSRF_COOKIE_SECURE = _secure_cookies
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = os.getenv('DJANGO_SESSION_COOKIE_SAMESITE', 'Lax')
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Cross-site request forgery: list of origins that may POST to the site.
+# Required for production (the host apex + its protocol, e.g. https://app.example.com).
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
+]

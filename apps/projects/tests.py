@@ -2,10 +2,13 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase
+from rest_framework import status
 from rest_framework.test import APIClient
 
 from clients.models import Client
 from clients.testing import WithClientsTableMixin
+
+from users.testing import WithUsersTableMixin
 
 from .models import Budget, BudgetItem, ChangeOrder, Phase, Project, ProjectEmployee, normalize_category_name
 from .testing import WithProjectsTableMixin
@@ -305,3 +308,43 @@ class PortfolioBudgetSummaryAPITests(WithProjectsTableMixin, WithClientsTableMix
         response = self.api.get(f"/api/projects/budgets/portfolio-summary/?project={proj.id}")
         data = response.json()
         self.assertEqual(data["totals"]["projects"], 1)
+
+
+class DeleteReturnsMethodNotAllowedTests(
+    WithUsersTableMixin, WithProjectsTableMixin, WithClientsTableMixin, TestCase
+):
+    """
+    Projects and change orders carry financial/contract value, so hard DELETE
+    is intentionally not exposed. These endpoints used to raise
+    NotImplementedError inside perform_destroy (HTTP 500); they must now
+    respond 405 Method Not Allowed instead, and leave the row untouched.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client_obj = Client.objects.create(name="Delete Test Co")
+        self.api = APIClient()
+        self.api.force_authenticate(
+            user=DjangoUser.objects.create_user(username="delete_tester", password="pass12345")
+        )
+        self.project = Project.objects.create(
+            code="DEL-001", name="Delete Me", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("100000"), buyer=self.client_obj,
+        )
+        self.change_order = ChangeOrder.objects.create(
+            project=self.project,
+            number="CO-001",
+            description="Delete me",
+            amount=Decimal("5000"),
+            date="2026-01-15",
+        )
+
+    def test_delete_project_returns_405_not_500(self):
+        response = self.api.delete(f"/api/projects/projects/{self.project.id}/")
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertTrue(Project.objects.filter(pk=self.project.id).exists())
+
+    def test_delete_change_order_returns_405_not_500(self):
+        response = self.api.delete(f"/api/projects/change-orders/{self.change_order.id}/")
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertTrue(ChangeOrder.objects.filter(pk=self.change_order.id).exists())

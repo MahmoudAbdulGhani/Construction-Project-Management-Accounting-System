@@ -35,7 +35,7 @@ class WithEmployeesTableMixin:
     get wrapped by) TestCase's own.
     """
 
-    _created_tables = ()
+    _employees_created_tables = ()
 
     @classmethod
     def setUpClass(cls):
@@ -47,12 +47,12 @@ class WithEmployeesTableMixin:
         with connection.schema_editor() as editor:
             for model in to_create:
                 editor.create_model(model)
-        cls._created_tables = to_create
+        cls._employees_created_tables = to_create
         super().setUpClass()
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
         with connection.schema_editor() as editor:
-            for model in reversed(cls._created_tables):
+            for model in reversed(cls._employees_created_tables):
                 editor.delete_model(model)

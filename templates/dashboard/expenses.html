@@ -1,1 +1,74 @@
-{% extends "dashboard/base_dashboard.html" %}{% block title %}Expenses | Cedar Control{% endblock %}{% block dashboard_content %}<section class="page-heading"><div><p class="eyebrow">Cost control</p><h1>Expenses</h1><p>Capture and approve project costs with documents, categories, and accounting impact.</p></div><button class="primary-button">＋ Add expense</button></section><section class="module-stat-grid"><article class="module-stat tone-1"><span>This month</span><strong>{{ month_total|default:"$214K" }}</strong><em>Live overview</em></article><article class="module-stat tone-2"><span>Awaiting approval</span><strong>{{ awaiting_approval|default:"9" }}</strong><em>Needs attention</em></article><article class="module-stat tone-3"><span>Project costs</span><strong>{{ project_costs|default:"$188K" }}</strong><em>Current period</em></article><article class="module-stat tone-4"><span>Operating costs</span><strong>{{ operating_costs|default:"$26K" }}</strong><em>Updated today</em></article></section><section class="panel table-panel module-table"><div class="filterbar"><div class="local-search">⌕ <span>Search expenses…</span></div><button class="quiet-button">Category: All</button><button class="quiet-button">Status: All</button></div><div class="responsive-table"><table><thead><tr><th>Expense</th><th>Project</th><th>Category</th><th>Supplier / employee</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>{% for expense in expenses %}<tr><td><strong>{{ expense.number }}</strong><span>{{ expense.description }}</span></td><td>{{ expense.project }}</td><td>{{ expense.category }}</td><td>{{ expense.payee }}</td><td>{{ expense.date }}</td><td>{{ expense.amount }}</td><td><span class="status {{ expense.status|slugify }}"><i></i>{{ expense.status }}</span></td></tr>{% empty %}<tr><td><strong>EXP-0871</strong><span>Crane rental · 3 days</span></td><td>Cedar Heights</td><td>Equipment</td><td>Atlas Crane Services</td><td>27 Aug</td><td>$6,450</td><td><span class="status in-progress"><i></i>Pending</span></td></tr><tr><td><strong>EXP-0868</strong><span>Site generator fuel</span></td><td>Marina Pavilion</td><td>Site operations</td><td>Cash expense</td><td>26 Aug</td><td>$890</td><td><span class="status active"><i></i>Approved</span></td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% extends "dashboard/base_dashboard.html" %}
+{% load static %}
+{% block title %}Expenses | Cedar Control{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'css/expenses.css' %}">{% endblock %}
+{% block dashboard_content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Cost control</p><h1>Expenses</h1><p>Capture and approve project costs with documents, categories, and accounting impact.</p></div>
+  <button class="primary-button" data-expense-new>＋ Add expense</button>
+</section>
+
+<section class="module-stat-grid">
+  <article class="module-stat tone-1"><span>Expenses</span><strong data-metric="total">—</strong><em>Matching current filters</em></article>
+  <article class="module-stat tone-2"><span>Awaiting approval</span><strong data-metric="pending">—</strong><em>Pending, matching current filters</em></article>
+  <article class="module-stat tone-3"><span>Total recorded</span><strong data-metric="sum">—</strong><em>Amount + tax, matching current filters</em></article>
+  <article class="module-stat tone-4"><span>This month</span><strong data-metric="month">—</strong><em>Amount + tax this month</em></article>
+</section>
+
+<section class="panel table-panel module-table">
+  <div class="filterbar">
+    <div class="local-search">⌕ <span>Search expenses…</span><input type="text" id="expense-search-input" placeholder="" aria-label="Search expenses"></div>
+    <select id="expense-status-filter" class="quiet-select" aria-label="Filter by status">
+      <option value="all">Status: All</option>
+      <option value="PENDING">Pending</option>
+      <option value="APPROVED">Approved</option>
+      <option value="PAID">Paid</option>
+      <option value="REJECTED">Rejected</option>
+    </select>
+    <select id="expense-category-filter" class="quiet-select" aria-label="Filter by category">
+      <option value="">Category: All</option>
+    </select>
+    <select id="expense-project-filter" class="quiet-select" aria-label="Filter by project">
+      <option value="">Project: All</option>
+    </select>
+  </div>
+  <div class="filterbar filterbar-dates">
+    <label class="quiet-button">From <input type="date" data-date-from></label>
+    <label class="quiet-button">To <input type="date" data-date-to></label>
+  </div>
+  <div class="responsive-table">
+    <table>
+      <thead><tr><th>Expense</th><th>Project</th><th>Category</th><th>Supplier</th><th>Date</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody data-expense-rows>
+        <tr class="empty-row"><td colspan="8"><strong>Loading expenses…</strong><span>Fetching from the expenses API.</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<dialog class="expense-dialog" data-expense-dialog>
+  <form data-expense-form>
+    <header>
+      <div><p class="eyebrow">EXPENSE</p><h2 data-expense-form-title>Create expense</h2></div>
+      <button type="button" data-expense-close>×</button>
+    </header>
+    <div class="expense-form-grid">
+      <label>Project *<select name="project" required></select></label>
+      <label>Category *<select name="category" required></select></label>
+      <label>Supplier<select name="supplier"></select></label>
+      <label>Expense date *<input name="expense_date" type="date" required></label>
+      <label class="full">Description *<input name="description" required></label>
+      <label>Amount *<input name="amount" type="number" min="0.01" step="0.01" required></label>
+      <label>Tax amount<input name="tax_amount" type="number" min="0" step="0.01" value="0"></label>
+      <label>Payment method<input name="payment_method" maxlength="50"></label>
+      <label class="full">Notes<input name="notes"></label>
+    </div>
+    <p class="expense-error" data-expense-error hidden></p>
+    <footer>
+      <button type="button" class="quiet-button" data-expense-close>Cancel</button>
+      <button class="primary-button">Save expense</button>
+    </footer>
+  </form>
+</dialog>
+{% endblock %}
+{% block page_js %}<script src="{% static 'js/expenses.js' %}" defer></script>{% endblock %}

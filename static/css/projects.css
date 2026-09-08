@@ -32,13 +32,7 @@
 [data-dialog-fields] label:has(textarea),[data-dialog-fields] .span-2{grid-column:1/-1}
 [data-dialog-fields] .dialog-hint{margin:0 0 2px;padding:10px 12px;border-radius:9px;background:#eef6f4;color:#1a4842;font-size:12px;font-weight:650}
 
-/* --------------------------------------------------------------------
-   Status colors -- phases, budgets, change orders. Defined fully here
-   (rather than relying on the base stylesheet's generic pill) so every
-   status this page can render gets its own color instead of falling
-   back to a flat grey for anything the base styles don't happen to
-   recognize.
-   -------------------------------------------------------------------- */
+/* Status colors -- phases, budgets, change orders. */
 /* Phases */
 .dashboard-page:has([data-project-detail]) .status.not-started{background:#eef1ef;color:#5c6864}
 .dashboard-page:has([data-project-detail]) .status.in-progress{background:#e3edfa;color:#2260b8}
@@ -58,34 +52,24 @@
 
 .dashboard-page:has([data-project-detail]) .status i{background:currentColor}
 
-/* --------------------------------------------------------------------
-   Progress bar (phases table + overview timeline). Self-contained so
-   the fill width always reads correctly regardless of what a shared
-   base stylesheet does or doesn't define for this markup shape.
-   -------------------------------------------------------------------- */
+/* Progress bar */
 .dashboard-page:has([data-project-detail]) .progress-cell{display:flex;align-items:center;gap:10px;min-width:140px}
 .dashboard-page:has([data-project-detail]) .progress-cell>div{flex:1;height:8px;border-radius:99px;background:#dfe8e4;overflow:hidden}
 .dashboard-page:has([data-project-detail]) .progress-cell>div>div{height:100%;border-radius:99px;background:linear-gradient(90deg,#0f9384,#16857c);transition:width .2s ease}
 .dashboard-page:has([data-project-detail]) .progress-cell b{flex-shrink:0;color:#37433f;font-size:12px;font-weight:800}
 
-/* --------------------------------------------------------------------
-   Phase table row actions -- compact icon buttons instead of the
-   plain default button box.
-   -------------------------------------------------------------------- */
+/* Phase table row actions */
 .dashboard-page:has([data-project-detail]) .row-actions{display:flex;gap:6px}
-.dashboard-page:has([data-project-detail]) .row-actions .quiet-button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px}
+.dashboard-page:has([data-project-detail]) .row-actions .quiet-button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:99px}
 .dashboard-page:has([data-project-detail]) .row-actions .quiet-button svg{width:16px;height:16px}
 
-/* --------------------------------------------------------------------
-   Budgets tab -- one card per budget version, each with its own
-   allocated-items table.
-   -------------------------------------------------------------------- */
+/* Budgets tab */
 .budget-panel-head{margin:26px 0 16px}
 .budget-list{display:flex;flex-direction:column;gap:20px}
 .budget-empty{padding:32px;border:1px dashed #9ab7b2;border-radius:16px;background:#f8fbf9;color:#5c6864;text-align:center}
 
 .budget-card{border:1px solid #8db3ae;border-radius:16px;background:#f8fbf9;box-shadow:0 16px 30px #25453d14;overflow:hidden}
-.budget-card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid #d7e4df;background:#fff}
+.budget-card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid #d7e4df;background:transparent}
 .budget-card-title{display:flex;align-items:center;gap:12px}
 .budget-card-title h3{margin:0;color:#102d2d;font:700 18px Georgia,"Times New Roman",serif}
 
@@ -113,4 +97,138 @@
   .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-card{min-height:145px}
   .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-value{font-size:29px;margin-top:18px}
   [data-dialog-fields]{grid-template-columns:1fr}
+}
+
+/* Project Actions Dropdown */
+.project-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  position: relative;
+}
+
+.project-actions-menu {
+  position: relative;
+}
+
+.actions-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.actions-menu-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+
+.actions-menu-trigger svg:last-child {
+  width: 14px;
+  height: 14px;
+  transition: transform .18s ease;
+}
+
+.actions-menu-trigger[aria-expanded="true"] svg:last-child {
+  transform: rotate(180deg);
+}
+
+.actions-menu-trigger:disabled,
+.actions-menu-trigger.disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.actions-dropdown {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 210px;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid #9ab7b2;
+  border-radius: 12px;
+  box-shadow:
+    0 18px 40px #25453d26,
+    0 4px 12px #25453d12;
+  animation: projectActionsIn .14s ease-out;
+}
+
+.actions-dropdown[hidden] {
+  display: none;
+}
+
+.actions-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #29443e;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background .15s ease,
+    color .15s ease;
+}
+
+.actions-dropdown-item:hover {
+  background: #edf5f2;
+  color: #007c73;
+}
+
+.actions-dropdown-item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.actions-dropdown-item.is-primary {
+  color: #007c73;
+}
+
+.actions-dropdown-item.is-primary:hover {
+  background: #e1f2ee;
+}
+
+.actions-dropdown-empty {
+  padding: 12px 11px;
+  color: #75837e;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+@keyframes projectActionsIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 700px) {
+  .project-actions {
+    flex-wrap: wrap;
+  }
+  .project-actions-menu {
+    position: static;
+  }
+  .actions-dropdown {
+    right: 0;
+    left: auto;
+    max-width: calc(100vw - 32px);
+  }
 }

@@ -17,11 +17,12 @@ the Settings entry entirely.
 """
 from rest_framework import viewsets
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from users.permissions import IsOwner
 
-from .models import CompanyProfile
-from .serializers import CompanyProfileSerializer
+from .models import CompanyProfile, FinancialSettings
+from .serializers import CompanyProfileSerializer, FinancialSettingsSerializer
 
 
 class CompanyProfileViewSet(viewsets.ReadOnlyModelViewSet):
@@ -45,6 +46,38 @@ class CompanyProfileViewSet(viewsets.ReadOnlyModelViewSet):
         """PATCH /api/company/{pk}/ -- update the single company details."""
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class FinancialSettingsView(APIView):
+    """
+    GET / PATCH the single Financial rules record.
+
+    - GET   /api/company/financial-settings/  -> the singleton record
+    - PATCH /api/company/financial-settings/  -> update financial rules (owner)
+
+    Security: Owner only, matching ``CompanyProfileViewSet`` (the Settings
+    pages are only reachable by the Owner role).
+    """
+
+    permission_classes = [IsOwner]
+
+    def get_object(self):
+        settings, _ = FinancialSettings.objects.get_or_create(
+            pk=FinancialSettings.SINGLETON_PK
+        )
+        return settings
+
+    def get(self, request):
+        return Response(FinancialSettingsSerializer(self.get_object()).data)
+
+    def patch(self, request):
+        instance = self.get_object()
+        serializer = FinancialSettingsSerializer(
+            instance, data=request.data, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)

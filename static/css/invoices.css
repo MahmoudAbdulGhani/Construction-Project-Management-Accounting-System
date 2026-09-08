@@ -1,2 +1,635 @@
-.invoice-page-actions,.invoice-detail-actions,.detail-section-head{display:flex;align-items:center;gap:9px}.supplier-invoice-button{background:#075e59}.local-search input{border:0;background:none;outline:0;min-width:220px;font:inherit}.invoice-row-actions{display:flex;gap:5px}.invoice-row-actions button{white-space:nowrap}.invoice-link{border:0;background:none;padding:0;color:inherit;text-align:left;cursor:pointer}.invoice-link:hover{text-decoration:underline}.invoice-dialog{position:fixed;inset:0;margin:auto;width:min(700px,calc(100vw - 32px));max-height:calc(100vh - 36px);overflow:auto;border:1px solid #94aaa4;border-radius:15px;padding:0;background:#e7eeea;color:#073f3c;box-shadow:0 28px 80px #063d3c66}.invoice-dialog::backdrop{background:#063d3c80;backdrop-filter:blur(3px)}.invoice-dialog form,.invoice-detail-shell{padding:24px}.invoice-dialog header,.invoice-dialog footer,.detail-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px}.invoice-dialog header{padding-bottom:17px;margin-bottom:19px;border-bottom:1px solid #b2c3be}.invoice-dialog header h2{margin:3px 0}.invoice-dialog header button{border:0;background:none;font-size:26px;color:inherit;cursor:pointer}.invoice-dialog footer{justify-content:flex-end;margin-top:20px;padding-top:17px;border-top:1px solid #b2c3be}.invoice-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}.invoice-form-grid label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800}.invoice-form-grid input,.invoice-form-grid select,.item-form input{box-sizing:border-box;width:100%;border:1px solid #a4b7b2;border-radius:8px;background:#f8faf8;padding:10px;font:inherit}.invoice-error{grid-column:1/-1;background:#f6ded9;color:#8b2922;border-radius:8px;padding:10px;white-space:pre-wrap}.invoice-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.invoice-summary div{border:1px solid #afc0bb;border-radius:8px;padding:10px}.invoice-summary span{display:block;font-size:9px;text-transform:uppercase;color:#6b817c}.invoice-summary strong{display:block;margin-top:4px}.invoice-detail-actions{margin:16px 0;flex-wrap:wrap}.invoice-detail section{margin-top:18px}.item-form{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto auto;gap:8px;align-items:center;border-top:1px solid #b2c3be;margin-top:12px}.danger-action{border:1px solid #d4aaa5;background:#fff3f1;color:#98342d;border-radius:7px;padding:7px 10px;font:inherit;cursor:pointer}@media(max-width:900px){.invoice-page-actions{flex-direction:column;align-items:stretch}.invoice-summary{grid-template-columns:1fr 1fr}.item-form{grid-template-columns:1fr 1fr}.invoice-form-grid{grid-template-columns:1fr}}
-.invoice-form-grid [hidden]{display:none!important}
+/* =========================================================
+   Invoice Page
+   ========================================================= */
+
+.invoice-page-actions,
+.invoice-detail-actions,
+.detail-section-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+/* filterbar — match Accounting/Expenses header design */
+.module-table .filterbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 16px 18px !important;
+    background: linear-gradient(180deg,#f3f7f4,#e8f0ec) !important;
+    border-bottom: 1px solid #b5c8c2 !important;
+}
+.module-table .local-search {
+    flex: 0 0 260px !important;
+    min-height: 38px !important;
+    border: 1px solid #95aea8 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    padding: 0 12px !important;
+    box-shadow: inset 0 1px 2px rgba(6,61,60,.04) !important;
+}
+.module-table .local-search:focus-within { border-color: #078078 !important; box-shadow: 0 0 0 3px rgba(8,143,133,.12) !important; }
+
+/* heading 3 buttons — match Procurement Receive goods tall pill */
+.invoice-page-actions .primary-button {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
+
+.supplier-invoice-button {
+    background: #075e59;
+}
+
+
+/* =========================================================
+   Search
+   ========================================================= */
+
+.local-search input {
+    border: 0;
+    background: none;
+    outline: 0;
+    min-width: 220px;
+    font: inherit;
+}
+
+
+/* =========================================================
+   Invoice Table
+   ========================================================= */
+
+.invoice-row-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.invoice-row-actions button {
+    white-space: nowrap;
+}
+
+.invoice-link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.invoice-link:hover {
+    text-decoration: underline;
+}
+
+
+/* =========================================================
+   Invoice Dialog
+   ========================================================= */
+
+.invoice-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+
+    width: min(700px, calc(100vw - 32px));
+    max-height: calc(100vh - 36px);
+
+    overflow: auto;
+
+    border: 1px solid #94aaa4;
+    border-radius: 15px;
+
+    padding: 0;
+
+    background: #e7eeea;
+    color: #073f3c;
+
+    box-shadow: 0 28px 80px #063d3c66;
+}
+
+.invoice-dialog::backdrop {
+    background: #063d3c80;
+    backdrop-filter: blur(3px);
+}
+
+
+/* =========================================================
+   Detail Dialog
+   ========================================================= */
+
+.invoice-dialog.invoice-detail {
+    width: min(900px, calc(100vw - 32px));
+    max-width: 900px;
+}
+
+.invoice-detail-shell {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+
+    padding: 24px;
+
+    overflow-x: hidden;
+}
+
+
+/* =========================================================
+   Dialog Forms
+   ========================================================= */
+
+.invoice-dialog form:not(.item-form) {
+    padding: 24px;
+}
+.item-form-title {
+    font-weight: 600;
+}
+
+.invoice-dialog header,
+.invoice-dialog footer,
+.detail-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.invoice-dialog header {
+    padding-bottom: 17px;
+    margin-bottom: 19px;
+    border-bottom: 1px solid #b2c3be;
+}
+
+.invoice-dialog header h2 {
+    margin: 3px 0;
+}
+
+.invoice-dialog header button {
+    border: 0;
+    background: none;
+    font-size: 26px;
+    color: inherit;
+    cursor: pointer;
+}
+
+
+/* =========================================================
+   Create / Edit Invoice Form
+   ========================================================= */
+
+.invoice-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.invoice-form-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.invoice-form-grid input,
+.invoice-form-grid select {
+    box-sizing: border-box;
+
+    width: 100%;
+
+    border: 1px solid #a9bbb5;
+    border-radius: 8px;
+
+    background: #f8faf8;
+
+    padding: 11px 12px;
+
+    font: inherit;
+    font-size: 14px;
+}
+
+
+/* =========================================================
+   Errors
+   ========================================================= */
+
+.invoice-error {
+    grid-column: 1 / -1;
+
+    background: #f6ded9;
+    color: #8b2922;
+
+    border-radius: 8px;
+
+    padding: 10px;
+
+    white-space: pre-wrap;
+}
+
+
+/* =========================================================
+   Dialog Footer
+   ========================================================= */
+
+.invoice-dialog footer {
+    justify-content: flex-end;
+
+    margin-top: 20px;
+    padding-top: 17px;
+
+    border-top: 1px solid #b2c3be;
+}
+
+
+/* =========================================================
+   Invoice Summary
+   ========================================================= */
+
+.invoice-summary {
+    display: grid;
+
+    grid-template-columns: repeat(4, 1fr);
+
+    gap: 9px;
+}
+
+.invoice-summary div {
+    border: 1px solid #afc0bb;
+    border-radius: 8px;
+
+    padding: 10px;
+}
+
+.invoice-summary span {
+    display: block;
+
+    font-size: 9px;
+    text-transform: uppercase;
+
+    color: #6b817c;
+}
+
+.invoice-summary strong {
+    display: block;
+
+    margin-top: 4px;
+}
+
+
+/* =========================================================
+   Invoice Detail Actions
+   ========================================================= */
+
+.invoice-detail-actions {
+    margin: 16px 0;
+
+    flex-wrap: wrap;
+}
+
+.invoice-detail section {
+    margin-top: 18px;
+}
+
+
+/* =========================================================
+   Financial Summary
+   ========================================================= */
+
+.invoice-financial {
+    display: grid;
+
+    grid-template-columns: repeat(3, 1fr);
+
+    gap: 9px;
+
+    margin-top: 14px;
+
+    border: 1px dashed #8aa79f;
+    border-radius: 10px;
+
+    padding: 12px;
+}
+
+.invoice-financial[hidden] {
+    display: none;
+}
+
+.invoice-financial div {
+    border-left: 2px solid #075e59;
+
+    padding-left: 9px;
+}
+
+.invoice-financial span {
+    display: block;
+
+    font-size: 9px;
+    text-transform: uppercase;
+
+    color: #6b817c;
+}
+
+.invoice-financial strong {
+    display: block;
+
+    margin-top: 3px;
+}
+
+.invoice-financial-load {
+    grid-column: 1 / -1;
+
+    color: #6b817c;
+
+    font-size: 12px;
+}
+
+
+/* =========================================================
+   Line Item Form
+   ========================================================= */
+
+/*
+   The item form uses fixed minimums for the important fields
+   while allowing the columns to shrink safely.
+
+   minmax(0, ...) and min-width: 0 prevent inputs from forcing
+   the dialog wider than the viewport.
+*/
+
+.item-form {
+    display: grid;
+
+    grid-template-columns:
+        minmax(220px, 2fr)
+        minmax(100px, 1fr)
+        minmax(130px, 1fr)
+        minmax(130px, 1fr)
+        minmax(150px, 1fr);
+
+    gap: 14px;
+
+    width: 100%;
+    max-width: 100%;
+
+    box-sizing: border-box;
+
+    align-items: start;
+
+    border-top: 1px solid #b2c3be;
+
+    margin-top: 18px;
+
+    padding: 18px 0 0;
+}
+
+
+/*
+   Critical overflow protection.
+*/
+.item-form > * {
+    min-width: 0;
+    max-width: 100%;
+
+    box-sizing: border-box;
+}
+
+
+/* =========================================================
+   Line Item Labels
+   ========================================================= */
+
+.item-form label {
+    display: flex;
+    flex-direction: column;
+
+    gap: 6px;
+
+    min-width: 0;
+    max-width: 100%;
+
+    font-size: 11px;
+    font-weight: 800;
+
+    text-transform: uppercase;
+
+    color: #5b756f;
+
+    letter-spacing: 0.3px;
+}
+
+
+/* =========================================================
+   Line Item Inputs
+   ========================================================= */
+
+.item-form input,
+.item-form select {
+    display: block;
+
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+
+    box-sizing: border-box;
+
+    border: 1px solid #a9bbb5;
+    border-radius: 8px;
+
+    background: #f8faf8;
+
+    padding: 11px 12px;
+
+    font: inherit;
+    font-size: 14px;
+}
+
+.item-form input::placeholder {
+    opacity: 0.7;
+}
+
+.item-form input:focus,
+.item-form select:focus {
+    outline: 2px solid #075e5933;
+
+    border-color: #075e59;
+}
+
+
+/* =========================================================
+   Line Item Save / Cancel
+   ========================================================= */
+
+.item-form-actions {
+    grid-column: 1 / -1;
+
+    display: flex;
+
+    justify-content: flex-end;
+    align-items: center;
+
+    gap: 10px;
+
+    width: 100%;
+    min-width: 0;
+
+    box-sizing: border-box;
+
+    margin-top: 8px;
+
+    padding-top: 16px;
+
+    border-top: 1px solid #b2c3be;
+}
+
+.item-form-actions .primary-button,
+.item-form-actions .quiet-button {
+    padding: 11px 18px;
+
+    font-size: 14px;
+
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   Line Item Error
+   ========================================================= */
+
+.item-form .invoice-error {
+    grid-column: 1 / -1;
+
+    width: 100%;
+    max-width: 100%;
+
+    box-sizing: border-box;
+
+    margin-top: 4px;
+}
+
+
+/* =========================================================
+   Hidden Elements
+   ========================================================= */
+
+.invoice-form-grid [hidden] {
+    display: none !important;
+}
+
+.item-form [hidden] {
+    display: none !important;
+}
+
+
+/* =========================================================
+   Danger Button
+   ========================================================= */
+
+.danger-action {
+    border: 1px solid #d4aaa5;
+
+    background: #fff3f1;
+    color: #98342d;
+
+    border-radius: 7px;
+
+    padding: 7px 10px;
+
+    font: inherit;
+
+    cursor: pointer;
+}
+
+
+/* =========================================================
+   Tablet
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+    .invoice-page-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .invoice-summary {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .invoice-financial {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .invoice-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /*
+       Two-column item form on tablet.
+    */
+    .item-form {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+
+    .item-form-actions {
+        grid-column: 1 / -1;
+    }
+
+    .invoice-dialog.invoice-detail {
+        width: calc(100vw - 32px);
+        max-width: calc(100vw - 32px);
+    }
+}
+
+
+/* =========================================================
+   Mobile
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+    .invoice-dialog {
+        width: calc(100vw - 20px);
+        max-width: calc(100vw - 20px);
+
+        max-height: calc(100vh - 20px);
+    }
+
+    .invoice-dialog.invoice-detail {
+        width: calc(100vw - 20px);
+        max-width: calc(100vw - 20px);
+    }
+
+    .invoice-detail-shell {
+        padding: 18px;
+    }
+
+    .invoice-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .invoice-financial {
+        grid-template-columns: 1fr;
+    }
+
+    /*
+       Single-column item form on mobile.
+    */
+    .item-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .item-form-actions {
+        grid-column: 1 / -1;
+
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .item-form-actions button {
+        width: 100%;
+    }
+}

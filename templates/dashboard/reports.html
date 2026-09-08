@@ -30,6 +30,10 @@
 
 <section class="report-panel" data-panel="pnl" hidden>
   <div class="panel-head"><div><h2>Profit &amp; Loss</h2><p data-pnl-period>Full period</p></div></div>
+  <div class="pnl-chart-wrap">
+    <div class="donut-chart" data-pnl-donut></div>
+    <div class="donut-legend" data-pnl-donut-legend></div>
+  </div>
   <div class="pnl-summary">
     <div class="pnl-block"><h3>Revenue</h3><strong data-pnl-revenue>$0.00</strong><div class="pnl-accounts" data-pnl-revenue-accounts></div></div>
     <div class="pnl-block"><h3>Expenses</h3><strong data-pnl-expenses>$0.00</strong><div class="pnl-accounts" data-pnl-expense-accounts></div></div>
@@ -38,8 +42,14 @@
 </section>
 
 <section class="report-panel" data-panel="trend" hidden>
-  <div class="panel-head"><div><h2>Revenue &amp; expense trend</h2><p data-trend-period>Full period</p></div></div>
-  <div class="bar-chart" data-trend-chart></div>
+  <div class="panel-head"><div><h2>Revenue &amp; expense trend</h2><p data-trend-period>Full period</p></div>
+    <div class="chart-legend">
+      <span class="legend-item legend-revenue">Revenue</span>
+      <span class="legend-item legend-expense">Expense</span>
+      <span class="legend-item legend-net">Net profit</span>
+    </div>
+  </div>
+  <div class="trend-svg-wrap" data-trend-wrap></div>
 </section>
 
 <section class="report-panel" data-panel="aging" hidden>
@@ -50,32 +60,40 @@
     <div class="aging-bucket"><span>61–90 days</span><strong>$0.00</strong></div>
     <div class="aging-bucket"><span>90+ days</span><strong>$0.00</strong></div>
   </div>
-  <div class="panel-table responsive-table"><table>
-    <thead><tr><th>Invoice</th><th>Client</th><th>Project</th><th>Due date</th><th>Days overdue</th><th>Outstanding</th></tr></thead>
-    <tbody data-aging-rows><tr class="empty-row"><td colspan="6"><b>No outstanding invoices</b></td></tr></tbody>
-  </table></div>
+  <div class="aging-chart" data-aging-chart></div>
+  <div class="aging-pie-row">
+    <div class="donut-chart small" data-aging-donut></div>
+    <div class="donut-legend" data-aging-donut-legend></div>
+  </div>
 </section>
 
 <section class="report-panel" data-panel="budget" hidden>
   <div class="panel-head"><div><h2>Budget vs actual</h2><p>Portfolio-wide cost performance</p></div></div>
-  <div class="panel-table responsive-table"><table>
-    <thead><tr><th>Project</th><th>Budget</th><th>Budgeted</th><th>Actual</th><th>Variance</th><th>Remaining</th></tr></thead>
-    <tbody data-budget-rows><tr class="empty-row"><td colspan="6"><b>No projects with active budgets</b></td></tr></tbody>
-  </table></div>
   <div class="budget-totals">
     <span>Budgeted: <strong data-budget-total-budgeted>$0.00</strong></span>
     <span>Actual: <strong data-budget-total-actual>$0.00</strong></span>
     <span>Variance: <strong data-budget-total-variance>$0.00</strong></span>
     <span>Remaining: <strong data-budget-total-remaining>$0.00</strong></span>
   </div>
+  <div class="budget-chart" data-budget-chart></div>
 </section>
 
 <section class="report-panel" data-panel="ledger" hidden>
-  <div class="panel-head"><div><h2>Transaction ledger</h2><p>Posted journal entries</p></div></div>
-  <div class="panel-table responsive-table"><table>
-    <thead><tr><th>Transaction</th><th>Date</th><th>Description</th><th>Project</th><th>Debit</th><th>Credit</th></tr></thead>
-    <tbody data-ledger-rows><tr class="empty-row"><td colspan="6"><b>No posted transactions</b></td></tr></tbody>
-  </table></div>
+  <div class="panel-head"><div><h2>Transaction ledger</h2><p>Posted journal entries — debit vs credit visual</p></div>
+    <div class="chart-legend"><span class="legend-item legend-debit">Debit</span><span class="legend-item legend-credit">Credit</span></div>
+  </div>
+  <div class="ledger-chart-grid">
+    <div class="ledger-donut-wrap">
+      <div class="donut-chart small" data-ledger-donut></div>
+      <div class="donut-legend" data-ledger-donut-legend></div>
+    </div>
+    <div class="ledger-bars-wrap" data-ledger-bars></div>
+  </div>
+  <div class="budget-totals ledger-totals-bar">
+    <span>Page debit: <strong data-ledger-total-debit>$0.00</strong></span>
+    <span>Page credit: <strong data-ledger-total-credit>$0.00</strong></span>
+    <span>Transactions: <strong data-ledger-count>0</strong></span>
+  </div>
   <div class="reports-pagination">
     <span data-ledger-page-info>Page 1</span>
     <button type="button" class="quiet-button" data-ledger-prev disabled>‹ Previous</button>

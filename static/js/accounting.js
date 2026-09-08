@@ -136,7 +136,7 @@
   function renderTable() {
     const body = $("[data-transaction-rows]");
     if (!state.rows.length) {
-      body.innerHTML = `<tr class="empty-row"><td colspan="10"><b>No transactions found</b><span>Try adjusting the search or filters.</span></td></tr>`;
+      body.innerHTML = `<tr class="empty-row"><td colspan="11"><b>No transactions found</b><span>Try adjusting the search or filters.</span></td></tr>`;
     } else {
       body.innerHTML = state.rows.map((t) => {
         const actions = statusActions(t);
@@ -144,6 +144,7 @@
           <td><strong>${esc(t.transaction_number)}</strong><a class="accounting-row-link" data-detail-open="${t.id}">View details</a></td>
           <td>${esc(t.transaction_date || "—")}</td>
           <td>${esc(t.description || "—")}</td>
+          <td><span class="source-tag${t.source_type ? "" : " manual"}">${esc(t.source_label || "Manual")}</span></td>
           <td>${esc(t.project_name || "—")}</td>
           <td>${esc(t.client_name || "—")}</td>
           <td>${esc(t.supplier_name || "—")}</td>
@@ -168,6 +169,11 @@
 
   function statusActions(t) {
     const view = `<button type="button" class="accounting-row-action" data-detail-open="${t.id}">View</button>`;
+    // System-generated entries (backed by a source document) are managed by
+    // their operational app -- posted by the source workflow, voided and
+    // re-booked by the source handler. The accounting page is read-only for
+    // them: no Edit/Post/Delete, and voiding happens through the source.
+    if (t.source_type) return view;
     if (t.status === "DRAFT") {
       return view + `<button type="button" class="accounting-row-action" data-action-edit="${t.id}">Edit</button>` +
         `<button type="button" class="accounting-row-action post" data-action-post="${t.id}">Post</button>` +
@@ -207,7 +213,7 @@
       await loadTransactions();
       renderStats();
     } catch (e) {
-      $("[data-transaction-rows]").innerHTML = `<tr class="empty-row"><td colspan="10"><b>Could not load transactions</b><span>${esc(e.message)}</span></td></tr>`;
+      $("[data-transaction-rows]").innerHTML = `<tr class="empty-row"><td colspan="11"><b>Could not load transactions</b><span>${esc(e.message)}</span></td></tr>`;
       $("[data-page-next]").disabled = true;
       $("[data-page-prev]").disabled = true;
     }
@@ -216,6 +222,21 @@
   /* ---- lookups for selects ---- */
   async function loadAccounts() {
     state.accounts = await all(`${E.accounts}?is_active=true`);
+    // refresh any already-open line rows that were created before accounts arrived (ui-fixes fancy)
+    refreshLineSelects();
+  }
+  function refreshLineSelects() {
+    $$("[data-txn-lines] select[data-line-account]").forEach(function (sel) {
+      var cur = sel.value;
+      sel.innerHTML = accountOptions(cur);
+      // if ui-fixes fancy is active, its MutationObserver will sync the button label/pop
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    $$("[data-txn-lines] select[data-line-project]").forEach(function (sel) {
+      var cur = sel.value;
+      sel.innerHTML = projectOptions(cur);
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   async function loadLookups() {
@@ -225,14 +246,26 @@
     state.projects = projects.status === "fulfilled" ? projects.value : [];
     state.clients = clients.status === "fulfilled" ? clients.value : [];
     state.suppliers = suppliers.status === "fulfilled" ? suppliers.value : [];
+    if (projects.status !== "fulfilled") console.warn("projects lookup failed:", projects.reason);
+    if (clients.status !== "fulfilled") console.warn("clients lookup failed:", clients.reason);
+    if (suppliers.status !== "fulfilled") console.warn("suppliers lookup failed:", suppliers.reason);
+    // if dialog already open, refresh its header selects so fancy pop isn't stuck empty
+    if ($("[data-txn-dialog]") && $("[data-txn-dialog]").open) {
+      populateHeaderDimensions();
+    }
+    refreshLineSelects();
   }
 
   function populateLookupSelect(selector, rows, label, valueKey, textFn) {
     const select = $(selector);
+    if (!select) { console.warn("populateLookupSelect: missing", selector); return; }
     const current = select.value;
     select.innerHTML = `<option value="">${esc(label)}</option>` +
       rows.map((r) => `<option value="${r[valueKey]}">${esc(textFn(r))}</option>`).join("");
     select.value = current || "";
+    // force ui-fixes fancy to re-render (was cached empty if opened before fetch)
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    console.log("populate", selector, "rows:", rows.length, "options now:", select.options.length);
   }
 
   function populateFilters() {
@@ -245,6 +278,10 @@
     populateLookupSelect("[data-txn-form] select[name=project]", state.projects, "Project (optional)", "id", (r) => `${r.code} — ${r.name}`);
     populateLookupSelect("[data-txn-form] select[name=client]", state.clients, "Client (optional)", "id", (r) => r.name);
     populateLookupSelect("[data-txn-form] select[name=supplier]", state.suppliers, "Supplier (optional)", "id", (r) => r.name);
+    // notify ui-fixes fancy to re-render (header was empty if dialog opened before lookups finished)
+    document.querySelectorAll("[data-txn-form] select[name=project], [data-txn-form] select[name=client], [data-txn-form] select[name=supplier]").forEach(function (s) {
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   /* ---- line editor ---- */
@@ -258,21 +295,25 @@
       state.projects.map((p) => `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(`${p.code} — ${p.name}`)}</option>`).join("");
   }
 
-  function addLineRow(line) {
+  function txnLineRow(line) {
     line = line || {};
-    const tpl = $("[data-line-tpl]");
-    const row = tpl.cloneNode(true);
-    row.removeAttribute("data-line-tpl");
-    row.removeAttribute("hidden");
-    row.dataset.lineId = line.id || "";
+    return `<tr data-line-id="${esc(line.id || "")}">` +
+      `<td><select class="account-select" data-line-account>${accountOptions(line.account || "")}</select></td>` +
+      `<td><input class="line-input" data-line-description placeholder="Optional" value="${esc(line.description || "")}"></td>` +
+      `<td><select class="account-select" data-line-project>${projectOptions(line.project || "")}</select></td>` +
+      `<td><input type="number" class="line-amount" data-line-debit min="0" step="0.01" placeholder="0.00" value="${line.debit > 0 ? line.debit : ""}"></td>` +
+      `<td><input type="number" class="line-amount" data-line-credit min="0" step="0.01" placeholder="0.00" value="${line.credit > 0 ? line.credit : ""}"></td>` +
+      `<td><button type="button" class="line-remove" data-line-remove aria-label="Remove line">×</button></td>` +
+      `</tr>`;
+  }
 
-    row.querySelector("[data-line-account]").innerHTML = accountOptions(line.account || "");
-    row.querySelector("[data-line-description]").value = line.description || "";
-    row.querySelector("[data-line-project]").innerHTML = projectOptions(line.project || "");
-    row.querySelector("[data-line-debit]").value = line.debit > 0 ? line.debit : "";
-    row.querySelector("[data-line-credit]").value = line.credit > 0 ? line.credit : "";
+  function addLineRow(line) {
+    const body = $("[data-txn-lines]");
+    if (!body) throw new Error("Line table is missing. Refresh the page and try again.");
+    body.insertAdjacentHTML("beforeend", txnLineRow(line || {}));
+    const row = body.lastElementChild;
+
     row.querySelector("[data-line-remove]").onclick = () => { row.remove(); updateBalanceBar(); };
-    $("[data-txn-lines]").appendChild(row);
 
     row.querySelector("[data-line-debit]").addEventListener("input", () => {
       const d = Number(row.querySelector("[data-line-debit]").value || 0);
@@ -340,7 +381,13 @@
   /* ---- Create / Edit ---- */
   function openCreate() {
     state.txn = { id: null, mode: "create", editMode: "post" };
-    resetTxnForm();
+    try {
+      resetTxnForm();
+    } catch (e) {
+      $("[data-txn-lines]").innerHTML = "";
+      try { addLineRow(); addLineRow(); } catch (_) { /* keep the dialog openable */ }
+      showTxnError(e);
+    }
     dialogOpen($("[data-txn-dialog]"));
   }
 
@@ -370,7 +417,15 @@
       $("[data-txn-dialog-title]").textContent = `Edit ${t.transaction_number}`;
       dialogOpen($("[data-txn-dialog]"));
     } catch (e) {
-      alert(`Could not load transaction: ${e.message}`);
+      // Surface the failure inside the (always-opened) form dialog instead
+      // of a native browser alert, so the popup still appears.
+      const form = $("[data-txn-form]");
+      state.txn = { id, mode: "edit", editMode: "post" };
+      $("[data-txn-lines]").innerHTML = "";
+      try { addLineRow(); } catch (_) { /* keep the dialog openable */ }
+      if (form) form.elements.description.value = "";
+      showTxnError(new Error(`Could not load transaction: ${e.message}`));
+      dialogOpen($("[data-txn-dialog]"));
     }
   }
 
@@ -442,9 +497,15 @@
       dialogClose($("[data-txn-dialog]"));
       await refreshAll();
     } catch (e) {
-      // Partial-failure handling: header may already exist as DRAFT.
+      // Partial-failure handling: the header (and likely the lines) already
+      // exist as a DRAFT. The two common failures are an out-of-balance
+      // entry (lines saved fine, post rejected) and a genuine line-save
+      // error -- the message must not conflate them.
       if (state.txn.id && state.txn.mode !== "edit") {
-        showTxnError(new Error(`Header created (${state.txn.id}) but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
+        const unbalanced = /out-of-balance|out of balance|unbalanced/i.test(e.message);
+        showTxnError(new Error(unbalanced
+          ? `Saved as DRAFT — the entry is out of balance (debits ≠ credits), so it can't be posted yet. Add a matching line on the other side so the totals match, then open it and post.`
+          : `Header created but not all lines could be saved. It is preserved as a DRAFT — open it and retry.\n${e.message}`));
       } else {
         showTxnError(e);
       }
@@ -589,7 +650,7 @@
       $("[data-detail-title]").textContent = t.transaction_number || "Transaction detail";
       const fields = [
         ["Number", t.transaction_number], ["Date", t.transaction_date], ["Status", t.status],
-        ["Project", t.project_name || "—"], ["Client", t.client_name || "—"], ["Supplier", t.supplier_name || "—"],
+        ["Source", t.source_label || "Manual"], ["Project", t.project_name || "—"], ["Client", t.client_name || "—"], ["Supplier", t.supplier_name || "—"],
         ["Description", t.description || "—"], ["Reference", t.reference || "—"],
       ];
       $("[data-detail-fields]").innerHTML = fields.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join("");
@@ -606,9 +667,13 @@
       bal.textContent = diff === 0 ? "Balance: Balanced" : `Balance: ${money(Math.abs(diff))} out of balance`;
       bal.className = "txn-balance-status " + (diff === 0 ? "ok" : "bad");
 
-      // Status-aware footer actions (backend remains authoritative)
+      // Status-aware footer actions (backend remains authoritative).
+      // System-generated entries are read-only here -- their lifecycle is
+      // driven by the source document's own workflow.
       let actions = "";
-      if (t.status === "DRAFT") {
+      if (t.source_type) {
+        actions += `<p class="txn-context">Generated by the ${esc(t.source_label || "source")} workflow — managed from that module.</p>`;
+      } else if (t.status === "DRAFT") {
         actions += `<button type="button" class="accounting-row-action" data-detail-edit>Edit</button>` +
           `<button type="button" class="accounting-row-action post" data-detail-post>Post</button>`;
       } else if (t.status === "POSTED") {
@@ -664,7 +729,7 @@
       populateFilters();
       await refreshAll();
     } catch (e) {
-      $("[data-transaction-rows]").innerHTML = `<tr class="empty-row"><td colspan="10"><b>Could not load transactions</b><span>${esc(e && e.message || "Unknown error")}</span></td></tr>`;
+      $("[data-transaction-rows]").innerHTML = `<tr class="empty-row"><td colspan="11"><b>Could not load transactions</b><span>${esc(e && e.message || "Unknown error")}</span></td></tr>`;
     }
   });
 })();

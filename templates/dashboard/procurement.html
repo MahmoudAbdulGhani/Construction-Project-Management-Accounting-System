@@ -5,7 +5,7 @@
 {% block dashboard_content %}
 <section class="page-heading">
   <div><p class="eyebrow">Operations</p><h1>Procurement</h1><p>Control purchase requests, orders, receiving, and supplier commitments.</p></div>
-  <div class="page-actions"><button class="primary-button" type="button" data-open-receive>＋ Receive goods</button><button class="quiet-button" type="button">＋ New purchase order</button></div>
+  <div class="page-actions"><button class="primary-button" type="button" data-open-receive>＋ Receive goods</button><button class="quiet-button" type="button" data-open-po>＋ New purchase order</button></div>
 </section>
 
 <section class="module-stat-grid">
@@ -20,6 +20,7 @@
     <div class="local-search">⌕ <span>Search purchase orders…</span><input type="search" id="po-search-input" placeholder="PO number, supplier…" aria-label="Search purchase orders"></div>
     <select class="quiet-button" data-po-status aria-label="Filter purchase orders by status"><option value="">Status: All</option><option value="DRAFT">Draft</option><option value="SUBMITTED">Submitted</option><option value="APPROVED">Approved</option><option value="PARTIALLY_RECEIVED">Partially received</option><option value="RECEIVED">Received</option><option value="CANCELLED">Cancelled</option></select>
   </div>
+  <p class="form-error" data-po-page-error hidden></p>
   <div class="responsive-table"><table>
     <thead><tr><th>PO number</th><th>Supplier</th><th>Order date</th><th>Expected delivery</th><th>Value</th><th>Received</th><th>Status</th><th></th></tr></thead>
     <tbody data-po-rows><tr class="empty-row"><td colspan="8"><b>Loading purchase orders…</b><span>Fetching from the purchasing API.</span></td></tr></tbody>
@@ -66,6 +67,41 @@
     <header><div><p class="eyebrow">RECEIPT RECORD</p><h2 data-receipt-detail-title>Receipt detail</h2></div><button type="button" data-receipt-detail-close aria-label="Close">×</button></header>
     <div class="receive-fields" data-receipt-detail-fields><p>Loading receipt…</p></div>
     <section><h3>Items</h3><div class="responsive-table"><table><thead><tr><th>Material</th><th>Received</th><th>Notes</th></tr></thead><tbody data-receipt-detail-items></tbody></table></div></section>
+  </div>
+</dialog>
+
+<dialog class="procurement-dialog po-dialog" data-po-dialog>
+  <form data-po-form>
+    <header><div><p class="eyebrow">PURCHASE ORDER</p><h2 data-po-title>New purchase order</h2><p class="po-context">Record a purchase order and its line items; totals are calculated by the backend.</p></div><button type="button" data-po-close aria-label="Close">×</button></header>
+    <div class="po-form-grid">
+      <label>Supplier *<select name="supplier" data-po-supplier required><option value="">Loading suppliers…</option></select></label>
+      <label>PO number *<input name="po_number" data-po-number required maxlength="100" placeholder="PO-0001"></label>
+      <label>Order date *<input name="order_date" data-po-order-date type="date" required></label>
+      <label>Expected delivery date<input name="expected_delivery_date" data-po-expected-date type="date"></label>
+    </div>
+    <div class="po-items-wrap">
+      <div class="register-heading">
+        <div><h2>Line items</h2><p>At least one line is required.</p></div>
+        <button type="button" class="quiet-button" data-po-add-item>＋ Add line</button>
+      </div>
+      <div class="responsive-table"><table>
+        <thead><tr><th>Material</th><th>Quantity</th><th>Unit price</th><th>Description</th><th></th></tr></thead>
+        <tbody data-po-item-rows></tbody>
+      </table></div>
+    </div>
+    <p class="form-error" data-po-error hidden></p>
+    <footer>
+      <button type="button" class="quiet-button" data-po-close>Cancel</button>
+      <button class="primary-button" type="submit" data-po-save>Create purchase order</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="procurement-dialog po-confirm-dialog" data-po-confirm-dialog>
+  <div class="po-confirm-shell">
+    <header><div><p class="eyebrow">CONFIRM</p><h2 data-po-confirm-title>Are you sure?</h2></div></header>
+    <p class="confirm-message" data-po-confirm-message></p>
+    <footer><button type="button" class="quiet-button" data-po-confirm-cancel>Cancel</button><button type="button" class="primary-button" data-po-confirm-ok>Confirm</button></footer>
   </div>
 </dialog>
 {% endblock %}

@@ -13,7 +13,7 @@ fixed at USD, so neither is writable through the API.
 """
 from rest_framework import serializers
 
-from .models import CompanyProfile
+from .models import CompanyProfile, FinancialSettings
 
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
@@ -42,3 +42,57 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class FinancialSettingsSerializer(serializers.ModelSerializer):
+    """View/update the single Financial rules record."""
+
+    default_tax_rate_label = serializers.CharField(
+        source="default_tax_rate.name", read_only=True, default=""
+    )
+
+    class Meta:
+        model = FinancialSettings
+        fields = [
+            "id",
+            "fiscal_year_start_month",
+            "fiscal_year_start_day",
+            "lock_financial_periods",
+            "period_lock_after_days",
+            "default_tax_rate",
+            "default_tax_rate_label",
+            "default_payment_terms",
+            "retention_percent",
+            "budget_alert_percent",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "default_tax_rate_label",
+            "updated_at",
+        ]
+
+    def validate_fiscal_year_start_month(self, value):
+        if not 1 <= value <= 12:
+            raise serializers.ValidationError("Month must be between 1 and 12.")
+        return value
+
+    def validate_fiscal_year_start_day(self, value):
+        if not 1 <= value <= 31:
+            raise serializers.ValidationError("Day must be between 1 and 31.")
+        return value
+
+    def validate_period_lock_after_days(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Period lock days cannot be negative.")
+        return value
+
+    def validate_retention_percent(self, value):
+        if not 0 <= value <= 100:
+            raise serializers.ValidationError("Retention must be between 0 and 100.")
+        return value
+
+    def validate_budget_alert_percent(self, value):
+        if not 0 <= value <= 100:
+            raise serializers.ValidationError("Budget alert must be between 0 and 100.")
+        return value

@@ -19,6 +19,14 @@ select.quiet-button { font: inherit; cursor: pointer; }
 .doc-upload-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); background: var(--panel); border-radius: 14px 14px 0 0; }
 .doc-upload-head h2 { font-size: 18px; margin: 2px 0 0; }
 .doc-upload-head .eyebrow { color: #08736c !important; margin: 0; }
+/* heading + Upload document — match Procurement Receive goods (tall pill) */
+.page-heading .primary-button[data-doc-new] {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
 .doc-close { background: #eef2ef; border: 1px solid var(--line); color: var(--ink); width: 32px; height: 32px; border-radius: 9px; font-size: 18px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
 .doc-close:hover { background: #e2e8e5; }
 .doc-upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 24px; }
@@ -27,6 +35,19 @@ select.quiet-button { font: inherit; cursor: pointer; }
 .doc-upload-grid input:focus, .doc-upload-grid select:focus { border-color: #16857c; box-shadow: 0 0 0 3px #16857c18; }
 .doc-upload-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: #fafbfa; }
 .doc-upload-actions .primary-button { padding: 9px 16px; border: 0; border-radius: 10px; background: linear-gradient(135deg,#ffbd3f,#f28b2c); box-shadow: none; color: #183b38; font-weight: 800; cursor: pointer; }
+.doc-manual-toggle { border: 0; background: none; padding: 0; color: #16857c; font-size: 11px; font-weight: 700; cursor: pointer; text-align: left; }
+.doc-manual-toggle:hover { text-decoration: underline; }
+.doc-manual-field { grid-column: 1 / -1; }
+.doc-manual-field input { width: 100%; }
+
+/* ---- Download error dialog ---- */
+.doc-dialog { border: 0; border-radius: 14px; padding: 0; width: min(460px, 100%); background: var(--panel); box-shadow: 0 24px 60px #0d1f1ab5; }
+.doc-dialog::backdrop { background: #13231cb5; }
+.doc-dialog-shell header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.doc-dialog-shell header h2 { font-size: 17px; margin: 2px 0 0; }
+.doc-dialog-shell header .eyebrow { color: #08736c !important; margin: 0; }
+.doc-dialog-shell p.form-error { margin: 0; padding: 18px 24px; }
+.doc-dialog-shell footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--line); background: #fafbfa; }
 
 @media (max-width: 700px) {
   .doc-upload-head, .doc-upload-grid { flex-direction: column; grid-template-columns: 1fr; }

@@ -11,7 +11,6 @@ Organized into:
 from datetime import timedelta
 from decimal import Decimal
 
-from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -28,7 +27,7 @@ from suppliers.models import Supplier
 from users.models import Role, User
 from users.testing import WithUsersTableMixin
 
-from .models import Notification, NotificationType
+from .models import Notification, NotificationPreference, NotificationType
 from .services import (
     budget_overrun_alerts,
     deadline_approaching_alerts,
@@ -236,19 +235,32 @@ class GenerateAllNotificationsTests(NotificationsTestBase):
 class NotificationAPITests(NotificationsTestBase):
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="apitester5", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.owner)
 
-    def test_create_and_list_notification(self):
-        response = self.client.post("/api/notifications/notifications/", {
-            "user": str(self.owner.id), "notification_type": "LOW_INVENTORY",
-            "title": "Low stock", "message": "Cement is low.",
-        }, format="json")
-        self.assertEqual(response.status_code, 201)
+    def test_list_returns_only_own_notifications(self):
+        Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="Low stock", message="Cement is low.")
+        Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="Overdue", message="Invoice overdue.")
 
-        list_response = self.client.get(f"/api/notifications/notifications/?user={self.owner.id}")
+        list_response = self.client.get("/api/notifications/notifications/")
         self.assertEqual(list_response.json()["count"], 1)
+        self.assertEqual(list_response.json()["results"][0]["user"], str(self.owner.id))
+
+    def test_user_query_param_cannot_widen_scope(self):
+        # The legacy ?user= filter must not let a user read someone else's inbox.
+        Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="Mine", message="Only mine.")
+        Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="Theirs", message="Not mine.")
+
+        response = self.client.get(f"/api/notifications/notifications/?user={self.accountant.id}")
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["results"][0]["title"], "Mine")
+
+    def test_cannot_create_notification_via_api(self):
+        response = self.client.post("/api/notifications/notifications/", {
+            "user": str(self.accountant.id), "notification_type": "LOW_INVENTORY",
+            "title": "Spoofed", "message": "Should be rejected.",
+        }, format="json")
+        self.assertEqual(response.status_code, 405)
 
     def test_mark_read(self):
         notification = Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="t", message="m")
@@ -258,18 +270,18 @@ class NotificationAPITests(NotificationsTestBase):
         notification.refresh_from_db()
         self.assertTrue(notification.is_read)
 
-    def test_is_read_cannot_be_set_directly_via_create(self):
-        response = self.client.post("/api/notifications/notifications/", {
-            "user": str(self.owner.id), "notification_type": "LOW_INVENTORY",
-            "title": "t", "message": "m", "is_read": True,
-        }, format="json")
-        self.assertFalse(response.json()["is_read"])
+    def test_cannot_mark_another_users_notification_read(self):
+        notification = Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="t", message="m")
+        response = self.client.post(f"/api/notifications/notifications/{notification.id}/mark_read/")
+        self.assertEqual(response.status_code, 404)
+        notification.refresh_from_db()
+        self.assertFalse(notification.is_read)
 
     def test_mark_all_read_scoped_to_filtered_queryset(self):
         Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="t1", message="m1")
         Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="t2", message="m2")
 
-        response = self.client.post(f"/api/notifications/notifications/mark_all_read/?user={self.owner.id}")
+        response = self.client.post("/api/notifications/notifications/mark_all_read/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["marked_read"], 1)
 
@@ -288,3 +300,116 @@ class NotificationAPITests(NotificationsTestBase):
         anon = APIClient()
         response = anon.get("/api/notifications/notifications/")
         self.assertEqual(response.status_code, 401)
+
+
+class NotificationPreferenceAPITests(NotificationsTestBase):
+    """Owner-only GET/PATCH of the Notifications-settings preferences."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.owner)
+
+    def _accountant_client(self):
+        client = APIClient()
+        client.force_authenticate(user=self.accountant)
+        return client
+
+    def test_get_returns_all_six_types_with_metadata(self):
+        response = self.client.get("/api/notifications/preferences/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(set(data.keys()), {
+            "OVERDUE_INVOICE", "PAYMENT_DUE", "LOW_INVENTORY",
+            "PO_AWAITING_APPROVAL", "BUDGET_OVERRUN", "DEADLINE_APPROACHING",
+        })
+        line = data["PAYMENT_DUE"]
+        self.assertTrue(line["is_enabled"])
+        self.assertEqual(line["role"], "ACCOUNTANT")
+        self.assertEqual(line["label"], "Payment Due")
+
+    def test_get_creates_rows_lazily(self):
+        self.assertEqual(NotificationPreference.objects.count(), 0)
+        self.client.get("/api/notifications/preferences/")
+        self.assertEqual(NotificationPreference.objects.count(), 6)
+
+    def test_patch_updates_only_provided_type(self):
+        response = self.client.patch(
+            "/api/notifications/preferences/",
+            {"LOW_INVENTORY": {"is_enabled": False}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["LOW_INVENTORY"]["is_enabled"])
+        # Other preferences untouched.
+        self.assertTrue(response.json()["PAYMENT_DUE"]["is_enabled"])
+
+    def test_patch_sets_window_days(self):
+        response = self.client.patch(
+            "/api/notifications/preferences/",
+            {"DEADLINE_APPROACHING": {"is_enabled": True, "window_days": 14}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["DEADLINE_APPROACHING"]["window_days"], 14)
+
+    def test_owner_only(self):
+        response = self._accountant_client().get("/api/notifications/preferences/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_anonymous_request_is_rejected(self):
+        response = APIClient().get("/api/notifications/preferences/")
+        self.assertEqual(response.status_code, 401)
+
+
+class NotificationPreferenceServiceTests(NotificationsTestBase):
+    """The alert generators honour the stored preferences."""
+
+    def make_client_invoice(self, **kwargs):
+        defaults = dict(client=self.client_obj, invoice_number="CINV-1", invoice_date="2026-08-01", total_amount=Decimal("500.00"), status=ClientInvoice.Status.SENT)
+        defaults.update(kwargs)
+        return ClientInvoice.objects.create(**defaults)
+
+    def test_disabled_type_produces_no_alerts(self):
+        NotificationPreference.objects.create(
+            notification_type=NotificationType.LOW_INVENTORY,
+            is_enabled=False,
+        )
+        self.assertEqual(low_inventory_alerts(), [])
+
+    def test_enabled_type_still_generates(self):
+        # Default (no row) already works; ensure an explicit enabled row does too.
+        NotificationPreference.objects.create(
+            notification_type=NotificationType.LOW_INVENTORY,
+            is_enabled=True,
+        )
+        category = MaterialCategory.objects.create(name="Cement")
+        material = Material.objects.create(category=category, name="Portland Cement", sku="CEM-1", unit="bag", minimum_stock_level=Decimal("50.000"))
+        warehouse = Warehouse.objects.create(name="Main Yard")
+        Stock.objects.create(warehouse=warehouse, material=material, quantity=Decimal("10.000"))
+        created = low_inventory_alerts()
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].notification_type, NotificationType.LOW_INVENTORY)
+
+    def test_window_override_expands_payment_due_horizon(self):
+        today = timezone.now().date()
+        NotificationPreference.objects.create(
+            notification_type=NotificationType.PAYMENT_DUE,
+            is_enabled=True,
+            window_days=10,
+        )
+        # Invoice due in 8 days: inside the configured window, outside the default 3.
+        self.make_client_invoice(due_date=today + timedelta(days=8))
+        created = payment_due_alerts(today=today)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].notification_type, NotificationType.PAYMENT_DUE)
+
+    def test_generate_all_respects_disabled(self):
+        NotificationPreference.objects.create(
+            notification_type=NotificationType.PAYMENT_DUE,
+            is_enabled=False,
+        )
+        created = generate_all_notifications()
+        self.assertFalse(
+            any(n.notification_type == NotificationType.PAYMENT_DUE for n in created)
+        )

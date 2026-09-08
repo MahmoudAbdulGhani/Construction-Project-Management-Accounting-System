@@ -9,6 +9,11 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    # Development override: runserver (with auto-reload) instead of the
+    # production gunicorn command baked into the Dockerfile. Set
+    # COMPOSE_DEV=0 to keep gunicorn, or override with
+    # `docker compose run` for one-off production-like checks.
+    command: python manage.py runserver 0.0.0.0:8000
     healthcheck:
       test:
         - CMD

@@ -1,11 +1,11 @@
 {% extends "dashboard/base_dashboard.html" %}
 {% load static %}
 {% block title %}Payments | Cedar Control{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}?v=20260903-3">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}?v=20260906-1">{% endblock %}
 {% block dashboard_content %}
 <section class="page-heading">
-  <div><p class="eyebrow">Cash movement</p><h1>Payments</h1><p>Record and allocate client receipts and supplier payments.</p></div>
-  <div class="page-actions"><a class="quiet-button" href="/receipts/">Receipt register</a><button class="primary-button" type="button" data-payment-new="INCOMING">＋ Receive from client</button><button class="primary-button supplier-payment-button" type="button" data-payment-new="OUTGOING">＋ Pay supplier</button></div>
+  <div><p class="eyebrow">Cash movement</p><h1>Payments</h1><p>Record client receipts and payments to suppliers, employees, and contractors.</p></div>
+  <div class="page-actions"><a class="quiet-button" href="/receipts/">Receipt register</a><button class="primary-button" type="button" data-payment-new="CLIENT">Receive from client</button><button class="primary-button supplier-payment-button" type="button" data-payment-new="SUPPLIER">Pay supplier</button><button class="primary-button" type="button" data-payment-new="EMPLOYEE">Pay employee</button><button class="primary-button" type="button" data-payment-new="CONTRACTOR">Pay contractor</button></div>
 </section>
 <section class="module-stat-grid">
   <article class="module-stat tone-1"><span>Received</span><strong data-metric="received">—</strong><em>Loaded records</em></article>
@@ -23,14 +23,15 @@
     <tbody data-payment-rows><tr class="empty-row"><td colspan="8"><b>Loading payments…</b><span>Fetching from the payments API.</span></td></tr></tbody>
   </table></div>
 </section>
-<section class="payment-register-grid"><article class="panel table-panel module-table"><div class="register-heading"><div><h2>Allocation history</h2><p>Every payment-to-invoice allocation</p></div></div><div class="responsive-table"><table><thead><tr><th>Payment</th><th>Invoice</th><th>Amount</th><th>Record</th></tr></thead><tbody data-allocation-rows><tr><td colspan="4">Loading allocations…</td></tr></tbody></table></div></article><article class="panel table-panel module-table"><div class="register-heading"><div><h2>Receipt history</h2><p>Issued incoming-payment receipts</p></div><a class="quiet-button" href="/receipts/">Open register</a></div><div class="responsive-table"><table><thead><tr><th>Receipt</th><th>Payment</th><th>Date</th><th>Amount</th><th></th></tr></thead><tbody data-inline-receipt-rows><tr><td colspan="5">Loading receipts…</td></tr></tbody></table></div></article></section>
+<section class="payment-register-grid"><article class="panel table-panel module-table"><div class="register-heading"><div><h2>Allocation history</h2><p>Every payment-to-invoice allocation</p></div></div><div class="responsive-table"><table><thead><tr><th>Payment</th><th>Invoice</th><th>Amount</th><th>Record</th></tr></thead><tbody data-allocation-rows><tr><td colspan="4">Loading allocations…</td></tr></tbody></table></div></article><article class="panel table-panel module-table"><div class="register-heading"><div><h2>Receipt history</h2><p>Issued payment receipts</p></div><a class="quiet-button" href="/receipts/">Open register</a></div><div class="responsive-table"><table><thead><tr><th>Receipt</th><th>Payment</th><th>Date</th><th>Amount</th><th></th></tr></thead><tbody data-inline-receipt-rows><tr><td colspan="5">Loading receipts…</td></tr></tbody></table></div></article></section>
 <dialog class="payment-dialog" data-payment-dialog><form data-payment-form>
   <header><div><p class="eyebrow">CASH MOVEMENT</p><h2 data-payment-form-title>Record payment</h2><p class="payment-form-context" data-payment-form-context></p></div><button type="button" data-dialog-close aria-label="Close">×</button></header>
   <div class="payment-form-grid">
-    <label>Payment number *<input name="payment_number" required maxlength="100"></label><label>Payment date *<input name="payment_date" type="date" required></label>
+    <label>Payment number<input name="payment_number" maxlength="100" placeholder="Auto-generated"></label><label>Payment date *<input name="payment_date" type="date" required></label>
     <input name="direction" type="hidden">
-    <label>Payment method *<input name="payment_method" required maxlength="50" placeholder="Bank transfer, cash, cheque…"></label><label>Amount *<input name="amount" type="number" min="0.01" step="0.01" required></label>
-    <label data-client-field>Client *<select name="client"></select></label><label data-supplier-field hidden>Supplier *<select name="supplier"></select></label>
+    <label>Payment method *<select name="payment_method" required><option value="">Select method</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="card">Card</option><option value="direct_deposit">Direct deposit</option><option value="mobile_money">Mobile money</option><option value="other">Other</option></select></label><label>Amount *<input name="amount" type="number" min="0.01" step="0.01" required></label>
+    <label data-client-field hidden>Client *<select name="client"></select></label><label data-supplier-field hidden>Supplier *<select name="supplier"></select></label>
+    <label data-employee-field hidden>Employee *<select name="employee_id"></select></label><label data-contractor-field hidden>Contractor *<select name="contractor_id"></select></label>
     <label>Reference<input name="reference" maxlength="255"></label><label class="wide">Notes<textarea name="notes" rows="3"></textarea></label>
   </div><p class="form-error" data-payment-error hidden></p>
   <footer><button type="button" class="quiet-button" data-dialog-close>Cancel</button><button class="primary-button" type="submit">Record payment</button></footer>
@@ -47,6 +48,12 @@
     <section><h3>Receipt</h3><div data-payment-detail-receipt>Loading…</div></section>
   </div>
 </dialog>
+<dialog class="payment-dialog" data-allocation-detail-dialog>
+  <div class="payment-detail-shell"><header><div><p class="eyebrow">ALLOCATION RECORD</p><h2>Allocation detail</h2></div><button type="button" data-allocation-detail-close aria-label="Close">×</button></header>
+    <div class="payment-detail-grid" data-allocation-detail-fields></div>
+    <footer><button type="button" class="quiet-button" data-allocation-detail-close>Close</button></footer>
+  </div>
+</dialog>
 <dialog class="payment-dialog" data-receipt-dialog><form data-receipt-form><header><div><p class="eyebrow">PAYMENT RECEIPT</p><h2 data-receipt-title>Issue receipt</h2></div><button type="button" data-receipt-close aria-label="Close">×</button></header><input type="hidden" name="payment"><div class="payment-form-grid"><label>Receipt number *<input name="receipt_number" required maxlength="100"></label><label>Receipt date *<input name="receipt_date" type="date" required></label><label>Payment amount<input name="amount" readonly></label><label>Reference<input name="reference" maxlength="255"></label></div><p class="form-error" data-receipt-error hidden></p><footer><button type="button" class="quiet-button" data-receipt-close>Cancel</button><button type="submit" class="primary-button">Issue receipt</button></footer></form></dialog>
 <dialog class="payment-dialog receipt-preview-dialog" data-receipt-preview-dialog>
   <div class="receipt-preview-shell">
@@ -57,4 +64,4 @@
   </div>
 </dialog>
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/payments.js' %}?v=20260903-3" defer></script>{% endblock %}
+{% block page_js %}<script src="{% static 'js/payments.js' %}?v=20260908-alloc-dialog" defer></script>{% endblock %}

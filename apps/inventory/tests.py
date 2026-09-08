@@ -256,3 +256,297 @@ class InventoryAPITests(WithUsersTableMixin, TestCase):
             "user": str(self.movement_user.id),
         }, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class StockReadApiTests(WithUsersTableMixin, TestCase):
+    """
+    Read-contract tests for GET /api/inventory/stocks/ -- the exact
+    queries inventory.js sends for the Inventory page (1B-1): warehouse
+    filter, material filter, free-text search across material name/SKU
+    and warehouse name, the quantity/minimum/is_low_stock fields that
+    drive the table and metrics, the PageNumberPagination contract, the
+    warehouses endpoint behind the store dropdown, and the
+    movement_type + date-range filters used for the "transfers today"
+    tile (distinct references among today's TRANSFER rows).
+    """
+
+    def setUp(self):
+        self.category = MaterialCategory.objects.create(name="Cement")
+        self.material = Material.objects.create(
+            category=self.category, name="Portland Cement", sku="CEM-READ-1", unit="bag",
+            minimum_stock_level=Decimal("50"),
+        )
+        self.warehouse_a = Warehouse.objects.create(name="Warehouse A")
+        self.warehouse_b = Warehouse.objects.create(name="Warehouse B")
+        self.movement_user = User.objects.create(
+            username="readmover", email="readmover@example.com", password_hash="x",
+            first_name="R", last_name="M", role="owner",
+        )
+        self.django_user = DjangoUser.objects.create_user(username="readtester", password="pass12345")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.django_user)
+
+    def _post_movement(self, material, warehouse, quantity, movement_type="IN",
+                       movement_date=None, reference=None):
+        payload = {
+            "material": str(material.id), "warehouse": str(warehouse.id),
+            "quantity": quantity, "movement_type": movement_type,
+            "user": str(self.movement_user.id),
+        }
+        if movement_date:
+            payload["movement_date"] = movement_date
+        if reference:
+            payload["reference"] = reference
+        return self.client.post("/api/inventory/stock-movements/", payload, format="json")
+
+    def test_stocks_list_filtered_by_warehouse(self):
+        self._post_movement(self.material, self.warehouse_a, "100")
+        self._post_movement(self.material, self.warehouse_b, "50")
+
+        response = self.client.get(f"/api/inventory/stocks/?warehouse={self.warehouse_a.id}")
+        body = response.json()
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["results"][0]["warehouse_name"], "Warehouse A")
+
+    def test_stocks_list_filtered_by_material(self):
+        other = Material.objects.create(
+            category=self.category, name="Rebar", sku="REBAR-READ-1", unit="ton",
+        )
+        self._post_movement(self.material, self.warehouse_a, "100")
+        self._post_movement(other, self.warehouse_a, "50")
+
+        response = self.client.get(f"/api/inventory/stocks/?material={other.id}")
+        body = response.json()
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["results"][0]["material_sku"], "REBAR-READ-1")
+
+    def test_stocks_search_matches_material_name_sku_and_warehouse(self):
+        self._post_movement(self.material, self.warehouse_a, "100")
+        site = Warehouse.objects.create(name="Site Alpha")
+        self._post_movement(self.material, site, "50")
+
+        self.assertEqual(self.client.get("/api/inventory/stocks/?search=Portland").json()["count"], 2)
+        self.assertEqual(self.client.get("/api/inventory/stocks/?search=CEM-READ-1").json()["count"], 2)
+        self.assertEqual(self.client.get("/api/inventory/stocks/?search=Alpha").json()["count"], 1)
+        self.assertEqual(self.client.get("/api/inventory/stocks/?search=Bogus").json()["count"], 0)
+
+    def test_stocks_list_includes_quantity_minimum_and_is_low_stock_flag(self):
+        self._post_movement(self.material, self.warehouse_a, "10")  # below the 50 minimum
+
+        row = self.client.get("/api/inventory/stocks/").json()["results"][0]
+        self.assertEqual(row["quantity"], "10.000")
+        self.assertEqual(row["minimum_stock_level"], "50.000")
+        self.assertIs(row["is_low_stock"], True)
+        self.assertEqual(row["material_name"], "Portland Cement")
+        self.assertEqual(row["material_sku"], "CEM-READ-1")
+        self.assertEqual(row["warehouse_name"], "Warehouse A")
+
+    def test_stocks_pagination_contract_25_per_page(self):
+        for i in range(26):
+            warehouse = Warehouse.objects.create(name=f"Bulk Warehouse {i:02d}")
+            Stock.objects.create(warehouse=warehouse, material=self.material, quantity=Decimal("1"))
+
+        first = self.client.get("/api/inventory/stocks/")
+        body = first.json()
+        self.assertEqual(body["count"], 26)
+        self.assertEqual(len(body["results"]), 25)
+        self.assertIsNotNone(body["next"])
+        self.assertIsNone(body["previous"])
+        self.assertIn("page=2", body["next"])
+
+        second = self.client.get("/api/inventory/stocks/?page=2")
+        body2 = second.json()
+        self.assertEqual(len(body2["results"]), 1)
+        self.assertIsNone(body2["next"])
+        self.assertIsNotNone(body2["previous"])
+
+    def test_movements_filter_by_movement_type_and_date_range(self):
+        # USE_TZ=False: movement dates and the ?date_from=/?date_to= query
+        # values are naive local datetimes (no "Z" suffix -- aware values
+        # make the SQLite comparison raise).
+        self._post_movement(self.material, self.warehouse_a, "100",
+                            movement_type="IN", movement_date="2026-09-01T10:00:00")
+        self._post_movement(self.material, self.warehouse_a, "-30",
+                            movement_type="TRANSFER", movement_date="2026-09-03T12:00:00",
+                            reference="transfer-abc")
+        self._post_movement(self.material, self.warehouse_b, "30",
+                            movement_type="TRANSFER", movement_date="2026-09-03T12:00:00",
+                            reference="transfer-abc")
+        self._post_movement(self.material, self.warehouse_b, "20",
+                            movement_type="IN", movement_date="2026-09-05T09:00:00")
+
+        # The tile-4 query: today's TRANSFER rows (its 2 legs) -- the JS
+        # counts distinct references from these rows, i.e. 1 operation.
+        day3 = "date_from=2026-09-03T00:00:00&date_to=2026-09-03T23:59:59.999999"
+        transfers = self.client.get(f"/api/inventory/stock-movements/?movement_type=TRANSFER&{day3}")
+        body = transfers.json()
+        self.assertEqual(body["count"], 2)
+        self.assertEqual({m["reference"] for m in body["results"]}, {"transfer-abc"})
+
+        # The same day without a type filter excludes the other days.
+        all_day3 = self.client.get(f"/api/inventory/stock-movements/?{day3}").json()
+        self.assertEqual(all_day3["count"], 2)
+
+        day1 = "date_from=2026-09-01T00:00:00&date_to=2026-09-01T23:59:59.999999"
+        all_day1 = self.client.get(f"/api/inventory/stock-movements/?{day1}").json()
+        self.assertEqual(all_day1["count"], 1)
+
+    def test_warehouses_list_is_reachable(self):
+        response = self.client.get("/api/inventory/warehouses/")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["count"], 2)
+        self.assertEqual({w["name"] for w in body["results"]}, {"Warehouse A", "Warehouse B"})
+
+
+class StockMovementWorkflowApiTests(WithUsersTableMixin, TestCase):
+    """
+    Write-contract tests for the 1B-2 movement workflows: the exact signed-
+    quantity and validation rules inventory.js relies on when posting
+    IN/OUT/RETURN/ADJUSTMENT to the append-only ledger and TRANSFER to the
+    transfer action, plus the composite material+warehouse history query
+    behind the per-row "Movements" dialog.
+
+    Covers the contract points the earlier test classes leave untested:
+    IN/RETURN sign enforcement, ADJUSTMENT in both directions, the required
+    `user`, the default movement_date, transfer input validation, the
+    paired-ledger-row transfer response, and the material+warehouse
+    composite history filter.
+    """
+
+    def setUp(self):
+        self.category = MaterialCategory.objects.create(name="Cement")
+        self.material = Material.objects.create(
+            category=self.category, name="Portland Cement", sku="CEM-WORK-1", unit="bag",
+            minimum_stock_level=Decimal("50"),
+        )
+        self.warehouse_a = Warehouse.objects.create(name="Warehouse A")
+        self.warehouse_b = Warehouse.objects.create(name="Warehouse B")
+        self.movement_user = User.objects.create(
+            username="workmover", email="workmover@example.com", password_hash="x",
+            first_name="W", last_name="M", role="owner",
+        )
+        self.django_user = DjangoUser.objects.create_user(username="worktester", password="pass12345")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.django_user)
+
+    def _post_movement(self, quantity, movement_type, warehouse=None, user=None,
+                       movement_date=None, reference=None):
+        payload = {
+            "material": str(self.material.id),
+            "warehouse": str((warehouse or self.warehouse_a).id),
+            "quantity": quantity, "movement_type": movement_type,
+            "user": str((user or self.movement_user).id),
+        }
+        if movement_date:
+            payload["movement_date"] = movement_date
+        if reference:
+            payload["reference"] = reference
+        return self.client.post("/api/inventory/stock-movements/", payload, format="json")
+
+    def test_in_movement_with_negative_quantity_rejected(self):
+        response = self._post_movement("-10", "IN")
+        self.assertEqual(response.status_code, 400)
+
+    def test_return_movement_with_positive_quantity_updates_stock(self):
+        response = self._post_movement("5", "RETURN")
+        self.assertEqual(response.status_code, 201)
+        stock = Stock.objects.get(warehouse=self.warehouse_a, material=self.material)
+        self.assertEqual(stock.quantity, Decimal("5"))
+
+    def test_return_movement_with_negative_quantity_rejected(self):
+        response = self._post_movement("-5", "RETURN")
+        self.assertEqual(response.status_code, 400)
+
+    def test_adjustment_with_positive_quantity_increases_stock(self):
+        response = self._post_movement("40", "ADJUSTMENT")
+        self.assertEqual(response.status_code, 201)
+        stock = Stock.objects.get(warehouse=self.warehouse_a, material=self.material)
+        self.assertEqual(stock.quantity, Decimal("40"))
+
+    def test_adjustment_with_negative_quantity_decreases_stock(self):
+        self._post_movement("100", "IN")
+        response = self._post_movement("-30", "ADJUSTMENT")
+        self.assertEqual(response.status_code, 201)
+        stock = Stock.objects.get(warehouse=self.warehouse_a, material=self.material)
+        self.assertEqual(stock.quantity, Decimal("70"))
+
+    def test_movement_creation_requires_user(self):
+        payload = {
+            "material": str(self.material.id), "warehouse": str(self.warehouse_a.id),
+            "quantity": "10", "movement_type": "IN",
+        }
+        response = self.client.post("/api/inventory/stock-movements/", payload, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_movement_creation_defaults_movement_date_to_now(self):
+        # USE_TZ=False: the ledger stores naive local datetimes; omitting
+        # movement_date falls back to timezone.now() on the model.
+        response = self._post_movement("10", "IN")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["movement_date"])
+
+    def test_movement_history_filter_by_material_and_warehouse(self):
+        # The per-row "Movements" dialog queries a composite
+        # ?material=<id>&warehouse=<id>.
+        self._post_movement("100", "IN", movement_date="2026-09-01T08:00:00")
+        self._post_movement("-30", "OUT", movement_date="2026-09-02T08:00:00")
+        self._post_movement("20", "IN", warehouse=self.warehouse_b,
+                            movement_date="2026-09-03T08:00:00")
+
+        params = f"material={self.material.id}&warehouse={self.warehouse_a.id}"
+        body = self.client.get(f"/api/inventory/stock-movements/?{params}").json()
+        self.assertEqual(body["count"], 2)
+        self.assertEqual({m["quantity"] for m in body["results"]}, {"100.000", "-30.000"})
+        for movement in body["results"]:
+            self.assertEqual(movement["material_name"], "Portland Cement")
+            self.assertEqual(movement["warehouse_name"], "Warehouse A")
+
+        other = self.client.get(
+            f"/api/inventory/stock-movements/?material={self.material.id}&warehouse={self.warehouse_b.id}"
+        ).json()
+        self.assertEqual(other["count"], 1)
+
+    def test_transfer_missing_required_fields_rejected(self):
+        response = self.client.post("/api/inventory/stock-movements/transfer/", {
+            "material": str(self.material.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Missing required field(s)", response.json()["detail"])
+
+    def test_transfer_non_positive_quantity_rejected(self):
+        for quantity in ("0", "-5"):
+            response = self.client.post("/api/inventory/stock-movements/transfer/", {
+                "material": str(self.material.id),
+                "from_warehouse": str(self.warehouse_a.id),
+                "to_warehouse": str(self.warehouse_b.id),
+                "quantity": quantity, "user": str(self.movement_user.id),
+            }, format="json")
+            self.assertEqual(response.status_code, 400)
+
+    def test_transfer_invalid_source_and_destination_rejected(self):
+        response = self.client.post("/api/inventory/stock-movements/transfer/", {
+            "material": str(self.material.id),
+            "from_warehouse": str(self.warehouse_a.id),
+            "to_warehouse": str(self.warehouse_a.id),
+            "quantity": "10", "user": str(self.movement_user.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("must differ", response.json()["detail"])
+
+    def test_transfer_returns_paired_ledger_rows_sharing_reference(self):
+        self._post_movement("100", "IN")
+        response = self.client.post("/api/inventory/stock-movements/transfer/", {
+            "material": str(self.material.id),
+            "from_warehouse": str(self.warehouse_a.id),
+            "to_warehouse": str(self.warehouse_b.id),
+            "quantity": "30", "user": str(self.movement_user.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["out"]["movement_type"], "TRANSFER")
+        self.assertEqual(body["in"]["movement_type"], "TRANSFER")
+        self.assertEqual(body["out"]["quantity"], "-30.000")
+        self.assertEqual(body["in"]["quantity"], "30.000")
+        self.assertTrue(body["out"]["reference"])
+        self.assertEqual(body["out"]["reference"], body["in"]["reference"])

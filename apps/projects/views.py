@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from construction.filtering import filter_date_range
+from contractors.serializers import ProjectContractorSerializer
 
 from .models import (
     Budget,
@@ -39,6 +40,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     /api/v1/projects/{id}/archive/         POST
     /api/v1/projects/{id}/unarchive/       POST
     /api/v1/projects/{id}/employees/       GET (list assignments), POST (assign)
+    /api/v1/projects/{id}/contractors/      GET (list contractor assignments)
     /api/v1/projects/{id}/release-employee/ POST  {"employee_id": "..."}
     /api/v1/projects/{id}/documents/       GET (linked documents)
     """
@@ -70,11 +72,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return ProjectListSerializer if self.action == "list" else ProjectSerializer
 
-    def perform_destroy(self, instance):
+    def destroy(self, request, *args, **kwargs):
         # Hard delete is intentionally not exposed for a financial system —
-        # archiving is the supported way to retire a project.
-        raise NotImplementedError(
-            "Projects cannot be deleted. Use POST /archive/ instead."
+        # archiving is the supported way to retire a project. Return 405
+        # (client mistake) rather than a NotImplementedError/500.
+        return Response(
+            data={"detail": "Projects cannot be deleted. Use POST /archive/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
     @action(detail=True, methods=["post"])
@@ -103,6 +107,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(project=project, assigned_at=request.data.get("assigned_at") or timezone.localdate())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="contractors")
+    def contractors(self, request, pk=None):
+        project = self.get_object()
+        qs = project.contractor_assignments.filter(
+            released_at__isnull=True
+        ).select_related("contractor")
+        return Response(ProjectContractorSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="release-employee")
     def release_employee(self, request, pk=None):
@@ -139,6 +151,20 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project = self.get_object()
         qs = project.phases.all()
         return Response(PhaseSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["get"], url_path="financial-summary")
+    def financial_summary(self, request, pk=None):
+        """
+        Project financial roll-up derived from linked invoices and their
+        payment allocations (not budgets): revenue (client invoices) and
+        expenses (supplier + contractor invoices), each as billed /
+        received-or-paid / outstanding, plus net accrual and cash
+        positions. Changes the moment a payment allocation is recorded.
+        """
+        from .financial import get_project_financial_summary
+
+        project = self.get_object()
+        return Response(get_project_financial_summary(project))
 
     @action(detail=True, methods=["get"], url_path="budget-summary")
     def budget_summary(self, request, pk=None):
@@ -381,11 +407,13 @@ class ChangeOrderViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "created_at", "amount"]
     ordering = ["-date"]
 
-    def perform_destroy(self, instance):
+    def destroy(self, request, *args, **kwargs):
         # Same reasoning as Project: a financial record with a contract-value
         # effect shouldn't disappear. Cancel it instead, for audit history.
-        raise NotImplementedError(
-            "Change orders cannot be deleted. Use POST /cancel/ instead."
+        # Return 405 (client mistake) rather than a NotImplementedError/500.
+        return Response(
+            data={"detail": "Change orders cannot be deleted. Use POST /cancel/ instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
     @action(detail=True, methods=["post"])

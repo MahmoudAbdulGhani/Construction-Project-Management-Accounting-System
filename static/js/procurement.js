@@ -1,7 +1,15 @@
 /* Procurement page -- Purchase Orders + Goods Receiving (CPMAS-31).
-   Consumes the authenticated DRF endpoints under /api/purchasing/ and
-   /api/inventory/ using the dashboard session (SessionAuthentication +
-   CSRF), same fetch/CSRF pattern as payments.js.
+   Consumes the authenticated DRF endpoints under /api/purchasing/,
+   /api/suppliers/ and /api/inventory/ using the dashboard session
+   (SessionAuthentication + CSRF), same fetch/CSRF pattern as payments.js.
+
+   Purchase Order (CPMAS-30) authoring: the page creates PO headers via
+   POST /purchase-orders/ and each line via POST /purchase-order-items/
+   (totals are always computed by the backend), edits DRAFT POs via
+   PATCH/DELETE, and drives status only through the submit/approve/cancel
+   actions. DRAFT-lock and transition validation live in the backend and
+   remain authoritative -- the UI refuse to expose actions the backend
+   would reject.
 
    Receiving is append-only: the page only lists and reads goods receipts
    and creates new ones -- there is no edit/delete UI and no PATCH/PUT/DELETE
@@ -12,8 +20,11 @@
 
   const E = {
     pos: "/api/purchasing/purchase-orders/",
+    items: "/api/purchasing/purchase-order-items/",
     goodsReceipts: "/api/purchasing/goods-receipts/",
     warehouses: "/api/inventory/warehouses/",
+    suppliers: "/api/suppliers/suppliers/",
+    materials: "/api/inventory/materials/",
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -36,6 +47,11 @@
     receivablePos: [],   // APPROVED + PARTIALLY_RECEIVED
     warehouses: [],
     currentPo: null,     // PO detail loaded into the receive dialog
+    poSuppliers: [],     // supplier catalog for the PO dialog
+    poMaterials: [],     // material catalog for PO dialog lines
+    poDialogMode: "create", // "create" | "edit"
+    poDialogId: null,    // PO being edited
+    poLoadedLines: {},   // id -> original line values loaded in edit mode
   };
 
   function cookie(name) {
@@ -106,6 +122,25 @@
     return `<span class="status${map[s] || ""}"><i></i>${esc(s || "—")}</span>`;
   };
 
+  // Status-driven row actions. Only surfaces transitions the backend
+  // ALLOWED_TRANSITIONS map permits (PARTIALLY_RECEIVED/RECEIVED/CANCELLED
+  // are terminal; APPROVED/SUBMITTED add matching next steps).
+  function poActions(p) {
+    const actions = {
+      DRAFT: [["edit", "Edit", "data-po-edit"], ["submit", "Submit", "data-po-submit-action"], ["cancel", "Cancel", "data-po-cancel"]],
+      SUBMITTED: [["approve", "Approve", "data-po-approve"], ["cancel", "Cancel", "data-po-cancel"]],
+      APPROVED: [["cancel", "Cancel", "data-po-cancel"], ["receive", "Receive", "data-receive"]],
+      PARTIALLY_RECEIVED: [["receive", "Receive", "data-receive"]],
+      RECEIVED: [],
+      CANCELLED: [],
+    }[p.status] || [];
+
+    return actions
+      .map(([kind, label, attr]) =>
+        `<button type="button" class="row-action${kind === "cancel" ? " danger" : ""}" data-id="${p.id}" ${attr}="${p.id}">${label}</button>`)
+      .join("");
+  }
+
   /* ---- rendering: Purchase Orders ---- */
   function renderPos() {
     const body = $("[data-po-rows]");
@@ -121,10 +156,6 @@
     body.innerHTML = list.map((p) => {
       const { received, ordered } = poReceived(p);
       const pct = ordered > 0 ? Math.round((received / ordered) * 100) : 0;
-      const receivable = RECEIVABLE.includes(p.status);
-      const action = receivable
-        ? `<button type="button" class="quiet-button" data-receive="${p.id}">Receive goods</button>`
-        : "";
       return `<tr>
         <td><strong>${esc(p.po_number)}</strong></td>
         <td>${esc(p.supplier_name || "—")}</td>
@@ -133,11 +164,9 @@
         <td>${money(p.total_amount)}</td>
         <td>${pct}% <span class="received-note">${fmtQty(received)} / ${fmtQty(ordered)}</span></td>
         <td>${statusPill(p.status)}</td>
-        <td><div class="payment-actions">${action}</div></td>
+        <td><div class="po-row-actions">${poActions(p)}</div></td>
       </tr>`;
     }).join("");
-
-    $$("[data-receive]", body).forEach((b) => (b.onclick = () => openReceiveDialog(b.dataset.receive)));
   }
 
   /* ---- rendering: Goods Receiving ---- */
@@ -204,10 +233,11 @@
     renderReceipts();
   }
 
-  /* ---- Refresh everything (after load or after a successful receive) ---- */
+  /* ---- Refresh everything (after load, create, edit, transition, or receive) ---- */
   async function refreshAll() {
     try {
       await Promise.all([loadPos(), loadReceipts()]);
+      populatePoFilter();
       renderStats();
     } catch (e) {
       $("[data-po-rows]").innerHTML = `<tr class="empty-row"><td colspan="8"><b>Could not load purchase orders</b><span>${esc(e.message)}</span></td></tr>`;
@@ -386,6 +416,290 @@
     }
   }
 
+  /* ---- Purchase Order create/edit dialog ---- */
+  let suppliersLoaded = false;
+  let materialsLoaded = false;
+
+  async function loadSuppliers() {
+    if (suppliersLoaded && state.poSuppliers.length) return;
+    try {
+      state.poSuppliers = await all(E.suppliers);
+      suppliersLoaded = true;
+    } catch (e) {
+      state.poSuppliers = [];
+    }
+  }
+
+  async function loadMaterials() {
+    if (materialsLoaded && state.poMaterials.length) return;
+    try {
+      state.poMaterials = await all(E.materials);
+      materialsLoaded = true;
+    } catch (e) {
+      state.poMaterials = [];
+    }
+  }
+
+  function supplierOptions(selectedId) {
+    const sorted = [...state.poSuppliers].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return '<option value="">Select supplier…</option>' +
+      sorted.map((s) => `<option value="${s.id}" ${String(s.id) === String(selectedId || "") ? "selected" : ""}>${esc(s.name || s.company_name || "Unnamed supplier")}</option>`).join("");
+  }
+
+  function materialOptions(selectedId) {
+    const sorted = [...state.poMaterials].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return '<option value="">Select material…</option>' +
+      sorted.map((m) => `<option value="${m.id}" ${String(m.id) === String(selectedId || "") ? "selected" : ""}>${esc(m.name)}${m.sku ? ` — ${esc(m.sku)}` : ""}</option>`).join("");
+  }
+
+  function lineValue(v) {
+    return v == null ? "" : String(v);
+  }
+
+  function poLineRow(line) {
+    const lineId = line && line.id ? esc(line.id) : "";
+    return `<tr class="po-line-row" data-po-line${lineId ? ` data-line-item-id="${lineId}"` : ""}>
+      <td><select name="material" data-line-material required>${materialOptions(line && line.material)}</select></td>
+      <td><input type="number" name="quantity" data-line-quantity class="line-input" required min="0.001" step="0.001" value="${lineValue(line && line.quantity)}" placeholder="0"></td>
+      <td><input type="number" name="unit_price" data-line-price class="line-input" required min="0" step="0.01" value="${lineValue(line && line.unit_price)}" placeholder="0.00"></td>
+      <td><input type="text" name="description" data-line-description class="line-desc" value="${line && line.description ? esc(line.description) : ""}" placeholder="Optional details"></td>
+      <td><button type="button" class="line-remove" data-po-remove-item aria-label="Remove line">×</button></td>
+    </tr>`;
+  }
+
+  function addLineRow(line) {
+    $("[data-po-item-rows]").insertAdjacentHTML("beforeend", poLineRow(line));
+    $("[data-po-error]").hidden = true;
+  }
+
+  function renderItemRows(lines) {
+    const body = $("[data-po-item-rows]");
+    body.innerHTML = lines.length ? lines.map((l) => poLineRow(l)).join("") : "";
+    if (!$$("[data-po-line]", body).length) addLineRow();
+  }
+
+  function showPoError(e) {
+    const n = $("[data-po-error]");
+    n.textContent = e.message || "Something went wrong.";
+    n.hidden = false;
+  }
+
+  function showPageError(e) {
+    const n = $("[data-po-page-error]");
+    n.textContent = e.message || "Something went wrong.";
+    n.hidden = false;
+    const panel = n.closest(".module-table");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  async function openPoDialog(mode, poId) {
+    const dialog = $("[data-po-dialog]");
+    const form = $("[data-po-form]");
+    form.reset();
+    $("[data-po-save]").disabled = false;
+    $("[data-po-error]").hidden = true;
+    $("[data-po-page-error]").hidden = true;
+
+    state.poDialogMode = mode;
+    state.poDialogId = poId || null;
+    state.poLoadedLines = {};
+
+    $("[data-po-title]").textContent = mode === "edit" ? "Edit purchase order" : "New purchase order";
+    $("[data-po-save]").textContent = mode === "edit" ? "Save changes" : "Create purchase order";
+    form.elements.order_date.value = new Date().toISOString().slice(0, 10);
+
+    try {
+      await Promise.all([loadSuppliers(), loadMaterials()]);
+      const supplierSelect = $("[data-po-supplier]");
+      supplierSelect.innerHTML = supplierOptions("");
+
+      if (mode === "edit" && poId) {
+        const po = await api(`${E.pos}${poId}/`);
+        state.poDialogId = po.id;
+        supplierSelect.value = po.supplier || "";
+        form.elements.po_number.value = po.po_number || "";
+        form.elements.order_date.value = po.order_date || "";
+        form.elements.expected_delivery_date.value = po.expected_delivery_date || "";
+        (po.items || []).forEach((it) => {
+          state.poLoadedLines[it.id] = {
+            material: it.material || "",
+            quantity: it.quantity == null ? "" : String(it.quantity),
+            unit_price: it.unit_price == null ? "" : String(it.unit_price),
+            description: it.description || "",
+          };
+        });
+        renderItemRows(po.items || []);
+      } else {
+        renderItemRows([]);
+      }
+    } catch (e) {
+      showPoError(e);
+    }
+    dialog.showModal();
+  }
+
+  function disablePoSave() {
+    $("[data-po-save]").disabled = true;
+  }
+
+  function enablePoSave() {
+    $("[data-po-save]").disabled = false;
+  }
+
+  async function submitPo(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    $("[data-po-error]").hidden = true;
+    disablePoSave();
+
+    try {
+      const userId = currentUser();
+      if (!userId) {
+        showPoError(new Error("No linked user account for recording this purchase order."));
+        enablePoSave();
+        return;
+      }
+
+      const formData = Object.fromEntries(new FormData(form).entries());
+
+      const allRows = $$("[data-po-line]", $("[data-po-item-rows]")).map((row) => ({
+        itemId: row.dataset.lineItemId || "",
+        material: row.querySelector("[data-line-material]").value,
+        quantity: row.querySelector("[data-line-quantity]").value.trim(),
+        unitPrice: row.querySelector("[data-line-price]").value.trim(),
+        description: row.querySelector("[data-line-description]").value.trim(),
+      }));
+      // Rows left entirely blank are ignored; a partially filled row is validated.
+      const lines = allRows.filter((r) => r.material || r.quantity !== "" || r.unitPrice !== "" || r.description);
+
+      const errs = [];
+      if (!formData.supplier) errs.push("Select a supplier.");
+      if (!formData.po_number || !formData.po_number.trim()) errs.push("Enter a PO number.");
+      if (!formData.order_date) errs.push("Enter an order date.");
+      if (!lines.length) errs.push("Add at least one line item.");
+      lines.forEach((r, i) => {
+        if (!r.material) errs.push(`Line ${i + 1}: select a material.`);
+        if (!(r.quantity !== "" && Number(r.quantity) > 0)) errs.push(`Line ${i + 1}: quantity must be greater than zero.`);
+        if (r.unitPrice === "" || Number(r.unitPrice) < 0) errs.push(`Line ${i + 1}: unit price cannot be negative.`);
+      });
+      if (errs.length) {
+        showPoError(new Error(errs.join("\n")));
+        enablePoSave();
+        return;
+      }
+
+      const headerPayload = {
+        supplier: formData.supplier,
+        po_number: formData.po_number.trim(),
+        order_date: formData.order_date,
+        created_by: userId,
+      };
+      if (formData.expected_delivery_date) headerPayload.expected_delivery_date = formData.expected_delivery_date;
+
+      if (state.poDialogMode === "edit" && state.poDialogId) {
+        const patch = { ...headerPayload };
+        delete patch.created_by; // created_by is an audit field, not something a DRAFT edit rewrites
+        await api(`${E.pos}${state.poDialogId}/`, { method: "PATCH", body: JSON.stringify(patch) });
+
+        const keptIds = new Set(lines.filter((l) => l.itemId).map((l) => l.itemId));
+        for (const id of Object.keys(state.poLoadedLines)) {
+          if (!keptIds.has(id)) await api(`${E.items}${id}/`, { method: "DELETE" });
+        }
+        for (const line of lines) {
+          if (!line.itemId) {
+            const payload = { purchase_order: state.poDialogId, material: line.material, quantity: line.quantity, unit_price: line.unitPrice };
+            if (line.description) payload.description = line.description;
+            await api(E.items, { method: "POST", body: JSON.stringify(payload) });
+          } else {
+            const original = state.poLoadedLines[line.itemId] || {};
+            const changed = original.material !== line.material ||
+              original.quantity !== line.quantity ||
+              original.unit_price !== line.unitPrice ||
+              original.description !== line.description;
+            if (changed) {
+              const payload = { material: line.material, quantity: line.quantity, unit_price: line.unitPrice };
+              if (line.description) payload.description = line.description;
+              await api(`${E.items}${line.itemId}/`, { method: "PATCH", body: JSON.stringify(payload) });
+            }
+          }
+        }
+        $("[data-po-dialog]").close();
+        await refreshAll();
+      } else {
+        const created = await api(E.pos, { method: "POST", body: JSON.stringify(headerPayload) });
+        try {
+          for (const line of lines) {
+            const payload = { purchase_order: created.id, material: line.material, quantity: line.quantity, unit_price: line.unitPrice };
+            if (line.description) payload.description = line.description;
+            await api(E.items, { method: "POST", body: JSON.stringify(payload) });
+          }
+        } catch (e) {
+          // Header created, lines failed: surface the actual failure, do not
+          // hide it, do not invent rollback -- the PO stays visible to Edit.
+          showPageError(new Error(`Purchase order ${created.po_number} was created, but adding line items failed:\n${e.message}`));
+          $("[data-po-dialog]").close();
+          await refreshAll();
+          return;
+        }
+        $("[data-po-dialog]").close();
+        $("[data-po-item-rows]").innerHTML = "";
+        $("[data-po-page-error]").hidden = true;
+        await refreshAll();
+      }
+    } catch (e) {
+      showPoError(e);
+      enablePoSave();
+    }
+  }
+
+  /* ---- PO status transitions (submit/approve/cancel) ---- */
+  let transitionBusy = false;
+
+  const poConfirmText = {
+    submit: { title: "Submit purchase order?", message: "Submit this purchase order to the supplier? The order can then be approved and received against.", okText: "Submit order" },
+    approve: { title: "Approve purchase order?", message: "Approve this purchase order? Approved orders can be received into stock.", okText: "Approve order" },
+    cancel: { title: "Cancel purchase order?", message: "Cancel this purchase order? This cannot be undone.", okText: "Cancel order" },
+  };
+
+  function confirmPoAction(kind) {
+    const { title, message, okText } = poConfirmText[kind];
+    return new Promise((resolve) => {
+      const dialog = $("[data-po-confirm-dialog]");
+      $("[data-po-confirm-title]").textContent = title;
+      $("[data-po-confirm-message]").textContent = message;
+      let settled = false;
+      const settle = (value) => { if (settled) return; settled = true; resolve(value); };
+      const ok = $("[data-po-confirm-ok]");
+      ok.textContent = okText;
+      ok.onclick = () => { settle(true); dialog.close(); };
+      $("[data-po-confirm-cancel]").onclick = () => dialog.close();
+      dialog.oncancel = () => dialog.close();   // Esc key
+      dialog.onclose = () => settle(false);
+      dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };  // click on backdrop
+      dialog.showModal();
+    });
+  }
+
+  async function runPoAction(kind, id) {
+    if (transitionBusy) return;
+    const endpoint = { submit: "submit", approve: "approve", cancel: "cancel" }[kind];
+    if (!endpoint) return;
+    const confirmed = await confirmPoAction(kind);
+    if (!confirmed) return;
+
+    transitionBusy = true;
+    try {
+      await api(`${E.pos}${id}/${endpoint}/`, { method: "POST" });
+      $("[data-po-page-error]").hidden = true;
+      await refreshAll();
+    } catch (e) {
+      // Backend validation (including invalid transitions) is authoritative.
+      showPageError(e);
+    } finally {
+      transitionBusy = false;
+    }
+  }
+
   /* ---- Receipt detail (read-only) ---- */
   async function openReceiptDetail(id) {
     const dialog = $("[data-receipt-detail-dialog]");
@@ -422,6 +736,41 @@
     $$("[data-receive-close]").forEach((b) => (b.onclick = () => $("[data-receive-dialog]").close()));
     $("[data-receipt-detail-close]").onclick = () => $("[data-receipt-detail-dialog]").close();
     $$(".procurement-dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
+
+    // Purchase Order authoring
+    $$("[data-open-po]").forEach((b) => (b.onclick = () => openPoDialog("create")));
+    $$("[data-po-close]").forEach((b) => (b.onclick = () => {
+      $("[data-po-dialog]").close();
+      $("[data-po-save]").disabled = false;
+    }));
+    $("[data-po-form]").addEventListener("submit", submitPo);
+    $("[data-po-add-item]").addEventListener("click", () => addLineRow());
+    $("[data-po-item-rows]").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-po-remove-item]");
+      if (!btn) return;
+      e.preventDefault();
+      const row = btn.closest("[data-po-line]");
+      if (!row) return;
+      if ($$("[data-po-line]", $("[data-po-item-rows]")).length <= 1) {
+        showPoError(new Error("A purchase order needs at least one line item."));
+        return;
+      }
+      row.remove();
+      $("[data-po-error]").hidden = true;
+    });
+
+    // Delegated PO row actions survive table re-renders after refreshAll().
+    $("[data-po-rows]").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-po-edit], [data-po-submit-action], [data-po-approve], [data-po-cancel], [data-receive]");
+      if (!btn) return;
+      e.preventDefault();
+      const id = btn.getAttribute("data-id");
+      if (btn.hasAttribute("data-po-edit")) return openPoDialog("edit", id);
+      if (btn.hasAttribute("data-po-submit-action")) return runPoAction("submit", id);
+      if (btn.hasAttribute("data-po-approve")) return runPoAction("approve", id);
+      if (btn.hasAttribute("data-po-cancel")) return runPoAction("cancel", id);
+      if (btn.hasAttribute("data-receive")) return openReceiveDialog(id);
+    });
 
     let poTimer;
     $("#po-search-input").addEventListener("input", (e) => {
@@ -462,8 +811,6 @@
     bind();
     try {
       // Load POs first so the receipt PO filter and metrics can use them.
-      await loadPos();
-      populatePoFilter();
       await refreshAll();
     } catch (e) {
       $("[data-po-rows]").innerHTML = `<tr class="empty-row"><td colspan="8"><b>Could not load purchase orders</b><span>${esc(e.message)}</span></td></tr>`;

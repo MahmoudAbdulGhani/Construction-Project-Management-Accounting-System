@@ -13,14 +13,20 @@ Organized into:
 """
 from decimal import Decimal
 from unittest.mock import patch
+from uuid import uuid4
 
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from accounting.models import FinancialTransaction
 from clients.models import Client
 from clients.testing import WithClientsTableMixin
-from invoicing.models import ClientInvoice, SupplierInvoice
+from contractors.models import Contractor
+from contractors.testing import WithContractorsTableMixin
+from employees.models import Employee
+from invoicing.models import ClientInvoice, ContractorInvoice, SupplierInvoice
 from projects.testing import WithProjectsTableMixin
 from suppliers.models import Supplier
 from users.models import Role, User
@@ -42,6 +48,8 @@ class PaymentsTestBase(WithUsersTableMixin, WithClientsTableMixin, WithProjectsT
     """
 
     def setUp(self):
+        super().setUp()
+        self.contractor_id = uuid4()
         self.creator = User.objects.create(
             username="creator", email="creator@example.com", password_hash="x",
             first_name="C", last_name="R", role=Role.ACCOUNTANT,
@@ -64,6 +72,14 @@ class PaymentsTestBase(WithUsersTableMixin, WithClientsTableMixin, WithProjectsT
         )
         defaults.update(kwargs)
         return SupplierInvoice.objects.create(**defaults)
+
+    def make_contractor_invoice(self, total_amount=Decimal("3000.00"), status=ContractorInvoice.Status.SENT, **kwargs):
+        defaults = dict(
+            contractor_id=self.contractor_id, invoice_number="COINV-0001", invoice_date="2026-08-31",
+            total_amount=total_amount, status=status,
+        )
+        defaults.update(kwargs)
+        return ContractorInvoice.objects.create(**defaults)
 
     def make_payment(self, direction=Payment.Direction.INCOMING, amount=Decimal("1000.00"), **kwargs):
         defaults = dict(
@@ -101,6 +117,13 @@ class OutstandingBalanceTests(PaymentsTestBase):
         invoice = self.make_supplier_invoice(total_amount=Decimal("500.00"))
         self.assertEqual(outstanding_balance(invoice), Decimal("500.00"))
 
+    def test_works_for_contractor_invoice_too(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3000.00"))
+        self.assertEqual(outstanding_balance(invoice), Decimal("3000.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("3000.00"))
+        self.assertEqual(outstanding_balance(invoice), Decimal("0.00"))
+
 
 class UnallocatedAmountTests(PaymentsTestBase):
     def test_equals_full_amount_with_no_allocations(self):
@@ -135,6 +158,43 @@ class AllocatePaymentServiceTests(PaymentsTestBase):
         allocate_payment(payment, invoice, Decimal("500.00"))
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, SupplierInvoice.Status.PAID)
+
+    def test_full_allocation_marks_contractor_invoice_paid(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3000.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("3000.00"))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, ContractorInvoice.Status.PAID)
+
+    def test_partial_allocation_marks_contractor_invoice_partially_paid(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3000.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("1200.00"))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, ContractorInvoice.Status.PARTIALLY_PAID)
+        self.assertEqual(outstanding_balance(invoice), Decimal("1800.00"))
+
+    def test_incoming_payment_cannot_fund_a_contractor_invoice(self):
+        invoice = self.make_contractor_invoice()
+        payment = self.make_payment(direction=Payment.Direction.INCOMING, amount=Decimal("3000.00"))
+        with self.assertRaises(ValidationError):
+            allocate_payment(payment, invoice, Decimal("100.00"))
+
+    def test_contractor_must_match_invoice(self):
+        invoice = self.make_contractor_invoice()
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=uuid4())
+        with self.assertRaises(ValidationError):
+            allocate_payment(payment, invoice, Decimal("100.00"))
+
+    def test_payment_with_both_supplier_and_contractor_targets_contractor(self):
+        # A payment recorded against a contractor also carries the
+        # supplier default off the OUTGOING path -- the contractor wins
+        # for matching purposes.
+        invoice = self.make_contractor_invoice()
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("3000.00"))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, ContractorInvoice.Status.PAID)
 
     def test_partial_allocation_marks_supplier_invoice_partially_paid(self):
         invoice = self.make_supplier_invoice(total_amount=Decimal("500.00"))
@@ -223,6 +283,126 @@ class AllocatePaymentServiceTests(PaymentsTestBase):
             allocate_payment(payment, invoice, Decimal("500.00"))  # only 400 left on the invoice
 
 
+class PaymentGLTests(PaymentsTestBase):
+    """CPMAS-34/Phase 3: every successful allocate_payment re-books the
+    payment's GL journal from its current allocation set.
+
+    INCOMING -> DR Cash (1000) / CR Accounts Receivable (1100) per
+    allocation; OUTGOING -> DR Accounts Payable (2000) / CR Cash (1000).
+    Each journal line carries its allocation's invoice project, the prior
+    entry becomes VOIDED on re-allocation, and an unallocated payment
+    (e.g. an employee wage run) books nothing.
+    """
+
+    def _live_entry(self, payment):
+        return FinancialTransaction.objects.get(
+            source_type=FinancialTransaction.SourceType.PAYMENT,
+            source_id=payment.id,
+            status=FinancialTransaction.Status.POSTED,
+        )
+
+    def _lines(self, payment):
+        return list(self._live_entry(payment).lines.select_related('account', 'project'))
+
+    def _summary(self, payment):
+        totals = {}
+        for line in self._lines(payment):
+            entry = totals.setdefault(line.account.code, {"debit": Decimal("0.00"), "credit": Decimal("0.00")})
+            entry["debit"] += line.debit
+            entry["credit"] += line.credit
+        return totals
+
+    def test_incoming_allocation_books_dr_cash_cr_ar(self):
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("1000.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("1000.00"))
+
+    def test_incoming_allocation_amounts_follow_the_allocation(self):
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("400.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("400.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("400.00"))
+
+    def test_outgoing_supplier_allocation_books_dr_ap_cr_cash(self):
+        invoice = self.make_supplier_invoice(total_amount=Decimal("500.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("500.00"))
+        allocate_payment(payment, invoice, Decimal("500.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["2000"]["debit"], Decimal("500.00"))
+        self.assertEqual(totals["1000"]["credit"], Decimal("500.00"))
+
+    def test_outgoing_contractor_allocation_books_dr_ap_cr_cash(self):
+        invoice = self.make_contractor_invoice(total_amount=Decimal("3000.00"))
+        payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("3000.00"), contractor_id=self.contractor_id)
+        allocate_payment(payment, invoice, Decimal("3000.00"))
+        totals = self._summary(payment)
+        self.assertEqual(totals["2000"]["debit"], Decimal("3000.00"))
+        self.assertEqual(totals["1000"]["credit"], Decimal("3000.00"))
+
+    def test_header_links_the_source_and_carries_reference_and_party(self):
+        from projects.models import Project
+
+        project = Project.objects.create(
+            code="PAY-GL-1", name="Payment GL Tower", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("50000.00"), buyer=self.client_obj,
+        )
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"), project=project)
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        entry = self._live_entry(payment)
+        self.assertEqual(entry.description, "Payment: PMT-0001")
+        self.assertEqual(entry.source_type, FinancialTransaction.SourceType.PAYMENT)
+        self.assertEqual(entry.project, None)
+        self.assertEqual(entry.client, self.client_obj)
+        self.assertEqual(entry.created_by_id, self.creator.id)
+
+    def test_lines_carry_their_allocation_invoice_project(self):
+        from projects.models import Project
+
+        project = Project.objects.create(
+            code="PAY-GL-2", name="Payment GL Tower Two", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("60000.00"), buyer=self.client_obj,
+        )
+        invoice = self.make_client_invoice(total_amount=Decimal("1000.00"), project=project)
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice, Decimal("1000.00"))
+        lines = self._lines(payment)
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertEqual(line.project_id, project.id)
+
+    def test_reallocation_voids_the_previous_entry_and_books_fresh(self):
+        invoice_a = self.make_client_invoice(invoice_number="CINV-A", total_amount=Decimal("1000.00"))
+        invoice_b = self.make_client_invoice(invoice_number="CINV-B", total_amount=Decimal("1000.00"))
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        allocate_payment(payment, invoice_a, Decimal("600.00"))
+        allocate_payment(payment, invoice_b, Decimal("400.00"))
+
+        entries = FinancialTransaction.objects.filter(
+            source_type=FinancialTransaction.SourceType.PAYMENT, source_id=payment.id,
+        ).order_by('created_at')
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].status, FinancialTransaction.Status.VOIDED)
+        self.assertEqual(entries[1].status, FinancialTransaction.Status.POSTED)
+        totals = self._summary(payment)
+        self.assertEqual(totals["1000"]["debit"], Decimal("1000.00"))
+        self.assertEqual(totals["1100"]["credit"], Decimal("1000.00"))
+
+    def test_unallocated_payment_books_nothing(self):
+        payment = self.make_payment(amount=Decimal("1000.00"))
+        self.assertEqual(
+            FinancialTransaction.objects.filter(
+                source_type=FinancialTransaction.SourceType.PAYMENT, source_id=payment.id,
+            ).count(),
+            0,
+        )
+
+
 class PaymentAPITests(PaymentsTestBase):
     def setUp(self):
         super().setUp()
@@ -238,6 +418,15 @@ class PaymentAPITests(PaymentsTestBase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["unallocated_amount"], "1000.00")
         self.assertEqual(response.json()["created_by"], str(self.creator.id))
+
+    def test_payment_number_is_autogenerated_when_blank(self):
+        response = self.client.post("/api/payments/payments/", {
+            "payment_date": "2026-08-31", "amount": "1000.00",
+            "direction": "INCOMING", "payment_method": "bank_transfer",
+            "client": str(self.client_obj.id), "created_by": str(self.creator.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertRegex(response.json()["payment_number"], r"^PAY-2026-\d{4}$")
 
     def test_client_cannot_control_created_by(self):
         owner = User.objects.create(
@@ -281,8 +470,10 @@ class PaymentAPITests(PaymentsTestBase):
                 "direction": "INCOMING", "payment_method": "cash", "client": str(self.client_obj.id),
             }, format="json")
             self.assertEqual(response.status_code, 400)
-        for field in ('payment_number', 'payment_method'):
-            payload = {"payment_number": "PMT-STR", "payment_date": "2026-08-31", "amount": "1.00",
+        # payment_number is optional (auto-generated), but payment_method stays
+        # a required non-blank field.
+        for field in ('payment_method',):
+            payload = {"payment_date": "2026-08-31", "amount": "1.00",
                        "direction": "INCOMING", "payment_method": "cash", "client": str(self.client_obj.id)}
             payload[field] = "   "
             self.assertEqual(self.client.post("/api/payments/payments/", payload, format="json").status_code, 400)
@@ -301,6 +492,7 @@ class PaymentAPITests(PaymentsTestBase):
             "direction": "INCOMING", "payment_method": "bank_transfer", "created_by": str(self.creator.id),
         }, format="json")
         self.assertEqual(response.status_code, 400)
+
 
     def test_payment_has_no_update_or_delete_routes(self):
         payment = self.make_payment(amount=Decimal("1000.00"))
@@ -358,13 +550,33 @@ class PaymentAPITests(PaymentsTestBase):
         }, format="json")
         self.assertEqual(response.status_code, 201)
 
-    def test_receipt_rejected_for_outgoing_payment(self):
+    def test_receipt_creation_for_outgoing_payment(self):
         payment = self.make_payment(direction=Payment.Direction.OUTGOING, amount=Decimal("500.00"))
         response = self.client.post("/api/payments/receipts/", {
             "payment": str(payment.id), "receipt_number": "RCPT-0002",
             "receipt_date": "2026-08-31", "amount": "500.00",
         }, format="json")
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["payee_name"], "ACME Building Supplies")
+
+    def test_payment_creation_auto_issues_receipts_for_both_directions(self):
+        # Money received AND money paid out each get receipted at record
+        # time (issue_receipt_for_payment), with the receipt number
+        # derived from the payment number.
+        incoming = self.client.post("/api/payments/payments/", {
+            "payment_number": "PMT-AUTO-IN", "payment_date": "2026-08-31", "amount": "1000.00",
+            "direction": "INCOMING", "payment_method": "bank_transfer", "client": str(self.client_obj.id),
+        }, format="json")
+        outgoing = self.client.post("/api/payments/payments/", {
+            "payment_number": "PMT-AUTO-OUT", "payment_date": "2026-08-31", "amount": "250.00",
+            "direction": "OUTGOING", "payment_method": "cash", "supplier": str(self.supplier.id),
+        }, format="json")
+        self.assertEqual(incoming.status_code, 201)
+        self.assertEqual(outgoing.status_code, 201)
+        for payment_id, number in ((incoming.json()["id"], "PMT-AUTO-IN"), (outgoing.json()["id"], "PMT-AUTO-OUT")):
+            receipt = Receipt.objects.get(payment_id=payment_id)
+            self.assertEqual(receipt.receipt_number, f"RCT-{number}")
+            self.assertEqual(str(receipt.amount), "1000.00" if number == "PMT-AUTO-IN" else "250.00")
 
     def test_receipt_rejected_if_payment_already_has_one(self):
         payment = self.make_payment(amount=Decimal("1000.00"))
@@ -543,4 +755,286 @@ class ReceiptDetailAndDownloadAPITests(PaymentsTestBase):
         # page PDF with an EOF trailer.
         self.assertIn(b"%%EOF", pdf)
         self.assertGreater(len(pdf), 2000)
+class EmployeeContractorPaymentAPITests(PaymentsTestBase):
+    @classmethod
+    def setUpClass(cls):
+        # Only the payee tables are needed here. Leave them in the disposable
+        # test database to avoid SQLite rebuilding unrelated reflected tables
+        # with cross-app foreign keys during per-class teardown.
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (Employee, Contractor):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+        super().setUpClass()
 
+    def setUp(self):
+        super().setUp()
+        self.api = APIClient()
+        self.api.force_authenticate(user=self.creator)
+        self.employee = Employee.objects.create(
+            employee_number="EMP-001", name="Maya Haddad",
+            employment_status=Employee.EmploymentStatus.ACTIVE,
+            labor_rate=Decimal("25.00"),
+        )
+        self.contractor = Contractor.objects.create(
+            name="Atlas Concrete", status=Contractor.Status.ACTIVE,
+            rate=Decimal("300.00"),
+        )
+
+    def payment_payload(self, number, **party):
+        return {
+            "payment_number": number, "payment_date": "2026-09-05",
+            "amount": "300.00", "direction": "OUTGOING",
+            "payment_method": "bank_transfer", **party,
+        }
+
+    def test_pay_employee(self):
+        response = self.api.post(
+            "/api/payments/payments/",
+            self.payment_payload("PMT-EMP-001", employee_id=str(self.employee.id)),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["payee_type"], "EMPLOYEE")
+        self.assertEqual(response.data["payee_name"], "Maya Haddad")
+        self.assertFalse(response.data["allocatable"])
+
+    def test_pay_contractor(self):
+        response = self.api.post(
+            "/api/payments/payments/",
+            self.payment_payload("PMT-CON-001", contractor_id=str(self.contractor.id)),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["payee_type"], "CONTRACTOR")
+        self.assertEqual(response.data["payee_name"], "Atlas Concrete")
+        # Contractor payments fund contractor invoices (the whole point of
+        # the contractor-invoice feature), so they are allocatable like
+        # supplier payments -- and they get an auto-issued receipt.
+        self.assertTrue(response.data["allocatable"])
+        self.assertTrue(response.data["has_receipt"])
+
+    def test_rejects_multiple_outgoing_payees(self):
+        response = self.api.post(
+            "/api/payments/payments/",
+            self.payment_payload(
+                "PMT-MULTI", supplier=str(self.supplier.id),
+                employee_id=str(self.employee.id),
+            ), format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_allocate_contractor_invoice_via_api(self):
+        invoice = ContractorInvoice.objects.create(
+            contractor_id=self.contractor.id, invoice_number="COINV-API-1",
+            invoice_date="2026-08-31", total_amount=Decimal("3000.00"),
+            status=ContractorInvoice.Status.SENT,
+        )
+        payment_response = self.api.post(
+            "/api/payments/payments/",
+            self.payment_payload("PMT-CON-002", contractor_id=str(self.contractor.id)),
+            format="json",
+        )
+        self.assertEqual(payment_response.status_code, 201, payment_response.data)
+
+        allocation = self.api.post("/api/payments/payment-allocations/", {
+            "payment": payment_response.json()["id"],
+            "contractor_invoice": str(invoice.id),
+            "allocated_amount": "300.00",
+        }, format="json")
+        self.assertEqual(allocation.status_code, 201, allocation.data)
+
+        invoice_response = self.api.get(f"/api/invoicing/contractor-invoices/{invoice.id}/")
+        self.assertEqual(invoice_response.json()["status"], "PARTIALLY_PAID")
+        self.assertEqual(invoice_response.json()["outstanding_balance"], "2700.00")
+
+    def test_incoming_payment_cannot_allocate_to_contractor_invoice_via_api(self):
+        invoice = ContractorInvoice.objects.create(
+            contractor_id=self.contractor.id, invoice_number="COINV-API-2",
+            invoice_date="2026-08-31", total_amount=Decimal("3000.00"),
+            status=ContractorInvoice.Status.SENT,
+        )
+        payment_response = self.api.post("/api/payments/payments/", {
+            "payment_number": "PMT-IN-CON", "payment_date": "2026-09-05",
+            "amount": "3000.00", "direction": "INCOMING",
+            "payment_method": "bank_transfer", "client": str(self.client_obj.id),
+        }, format="json")
+        allocation = self.api.post("/api/payments/payment-allocations/", {
+            "payment": payment_response.json()["id"],
+            "contractor_invoice": str(invoice.id),
+            "allocated_amount": "3000.00",
+        }, format="json")
+        self.assertEqual(allocation.status_code, 400)
+
+    def test_rejects_unknown_employee_or_contractor(self):
+        for field in ("employee_id", "contractor_id"):
+            response = self.api.post(
+                "/api/payments/payments/",
+                self.payment_payload(f"PMT-{field}", **{field: str(uuid4())}),
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400)
+
+class ProjectFinancialSummaryTests(
+    WithUsersTableMixin,
+    WithClientsTableMixin,
+    WithProjectsTableMixin,
+    WithContractorsTableMixin,
+    TestCase,
+):
+    """
+    CPMAS project financial roll-up (``projects.financial``, exposed at
+    ``GET /api/projects/projects/{id}/financial-summary/``): revenue from a
+    project's linked client invoices, expenses from its linked supplier +
+    contractor invoices, and the net position. Values move as payments are
+    allocated, which the invoice workflow relies on -- "confirm the project
+    financial summary changes" is the last step of the supplier-invoice flow.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from projects.models import Project
+
+        self.creator = User.objects.create(
+            username="proj_fin", email="proj_fin@example.com", password_hash="x",
+            first_name="P", last_name="F", role=Role.ACCOUNTANT,
+        )
+        self.client_obj = Client.objects.create(name="Jane Homeowner")
+        self.supplier = Supplier.objects.create(name="ACME Building Supplies")
+        self.contractor = Contractor.objects.create(
+            name="Atlas Concrete", status=Contractor.Status.ACTIVE, rate=Decimal("300.00"),
+        )
+        self.project = Project.objects.create(
+            code="FIN-SUM-T1", name="Financial Summary Tower",
+            project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("100000.00"),
+            buyer=self.client_obj,
+        )
+
+    def summary(self):
+        from projects.financial import get_project_financial_summary
+
+        return get_project_financial_summary(self.project)
+
+    def make_invoice(self, model, total_amount, **kwargs):
+        defaults = dict(
+            invoice_number=f"FS-{uuid4().hex[:8].upper()}",
+            invoice_date="2026-08-31", total_amount=total_amount, status=model.Status.SENT,
+        )
+        defaults.update(kwargs)
+        return model.objects.create(**defaults)
+
+    def test_summary_is_empty_without_linked_invoices(self):
+        s = self.summary()
+        self.assertEqual(s["project"]["code"], "FIN-SUM-T1")
+        self.assertEqual(s["revenue"]["billed"], "0.00")
+        self.assertEqual(s["revenue"]["received"], "0.00")
+        self.assertEqual(s["expenses"]["invoiced"], "0.00")
+        self.assertEqual(s["expenses"]["paid"], "0.00")
+        self.assertEqual(s["net"]["accrual"], "0.00")
+        self.assertEqual(s["net"]["cash"], "0.00")
+        self.assertEqual(s["net"]["outstanding"], "0.00")
+
+    def test_allocation_flow_moves_revenue_expenses_and_net(self):
+        client_inv = self.make_invoice(ClientInvoice, Decimal("5000.00"), client=self.client_obj, project=self.project)
+        supplier_inv = self.make_invoice(SupplierInvoice, Decimal("2000.00"), supplier=self.supplier, project=self.project)
+        contractor_inv = self.make_invoice(ContractorInvoice, Decimal("1500.00"), contractor_id=self.contractor.id, project=self.project)
+
+        s = self.summary()
+        self.assertEqual(s["revenue"]["billed"], "5000.00")
+        self.assertEqual(s["revenue"]["received"], "0.00")
+        self.assertEqual(s["expenses"]["invoiced"], "3500.00")
+        self.assertEqual(s["expenses"]["paid"], "0.00")
+        self.assertEqual(s["revenue"]["outstanding"], "5000.00")
+        self.assertEqual(s["expenses"]["outstanding"], "3500.00")
+        self.assertEqual(s["net"]["accrual"], "1500.00")
+        self.assertEqual(s["net"]["cash"], "0.00")
+        self.assertEqual(s["net"]["outstanding"], "8500.00")
+
+        # Outgoing payment to the supplier, allocated in two bites
+        # (partial -> PARTIALLY_PAID -> full -> PAID).
+        payment = Payment.objects.create(
+            payment_number="FS-PAY-OUT1", payment_date="2026-09-01", amount=Decimal("2000.00"),
+            direction=Payment.Direction.OUTGOING, payment_method="bank_transfer",
+            created_by=self.creator, supplier=self.supplier,
+        )
+        allocate_payment(payment, supplier_inv, Decimal("800.00"))
+        s = self.summary()
+        self.assertEqual(s["expenses"]["paid"], "800.00")
+        self.assertEqual(s["expenses"]["outstanding"], "2700.00")
+        self.assertEqual(s["net"]["cash"], "-800.00")
+
+        allocate_payment(payment, supplier_inv, Decimal("1200.00"))
+        supplier_inv.refresh_from_db()
+        s = self.summary()
+        self.assertEqual(supplier_inv.status, SupplierInvoice.Status.PAID)
+        self.assertEqual(s["expenses"]["paid"], "2000.00")
+        self.assertEqual(s["expenses"]["outstanding"], "1500.00")
+        self.assertEqual(s["net"]["cash"], "-2000.00")
+
+        # Incoming payment from the client, fully allocated -> PAID.
+        receipt = Payment.objects.create(
+            payment_number="FS-PAY-IN1", payment_date="2026-09-02", amount=Decimal("5000.00"),
+            direction=Payment.Direction.INCOMING, payment_method="bank_transfer",
+            created_by=self.creator, client=self.client_obj,
+        )
+        allocate_payment(receipt, client_inv, Decimal("5000.00"))
+        client_inv.refresh_from_db()
+        s = self.summary()
+        self.assertEqual(client_inv.status, ClientInvoice.Status.PAID)
+        self.assertEqual(s["revenue"]["received"], "5000.00")
+        self.assertEqual(s["revenue"]["outstanding"], "0.00")
+        self.assertEqual(s["net"]["cash"], "3000.00")
+        self.assertEqual(s["net"]["accrual"], "1500.00")
+
+    def test_unallocated_payments_do_not_count(self):
+        self.make_invoice(ClientInvoice, Decimal("5000.00"), client=self.client_obj, project=self.project)
+        Payment.objects.create(
+            payment_number="FS-PAY-IN2", payment_date="2026-09-02", amount=Decimal("5000.00"),
+            direction=Payment.Direction.INCOMING, payment_method="cash",
+            created_by=self.creator, client=self.client_obj,
+        )
+        s = self.summary()
+# a payment in hand is not revenue until it is allocated to an invoice
+        self.assertEqual(s["revenue"]["received"], "0.00")
+        self.assertEqual(s["revenue"]["outstanding"], "5000.00")
+
+    def test_other_projects_and_draft_status_are_gated_out(self):
+        from projects.models import Project
+
+        self.make_invoice(ClientInvoice, Decimal("5000.00"), client=self.client_obj, project=self.project)
+        # A SENT supplier invoice on a *different* project must not leak in.
+        other = Project.objects.create(
+            code="FIN-SUM-T2", name="Other Tower", project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-01-01", contract_value=Decimal("50000.00"), buyer=self.client_obj,
+        )
+        self.make_invoice(
+            SupplierInvoice, Decimal("999.00"), supplier=self.supplier, project=other,
+        )
+        # A DRAFT supplier invoice on this project must not count as billed.
+        self.make_invoice(
+            SupplierInvoice, Decimal("1000.00"), supplier=self.supplier, project=self.project,
+            status=SupplierInvoice.Status.DRAFT,
+        )
+        s = self.summary()
+        self.assertEqual(s["revenue"]["billed"], "5000.00")
+        self.assertEqual(s["expenses"]["invoiced"], "0.00")
+        self.assertEqual(s["net"]["accrual"], "5000.00")
+
+    def test_updates_do_not_require_recalculated_invoice_columns(self):
+        # Even a bare supplier invoice (subtotal/tax defaults, total set
+        # by the totals recalculator elsewhere) rolls up correctly because
+        # the summary reads total_amount + PaymentAllocation, not cached
+        # subtotal/tax.
+        self.make_invoice(SupplierInvoice, Decimal("2000.00"), supplier=self.supplier, project=self.project)
+        payment = Payment.objects.create(
+            payment_number="FS-PAY-OUT2", payment_date="2026-09-01", amount=Decimal("2000.00"),
+            direction=Payment.Direction.OUTGOING, payment_method="bank_transfer",
+            created_by=self.creator, supplier=self.supplier,
+        )
+        allocate_payment(payment, SupplierInvoice.objects.get(project=self.project), Decimal("2000.00"))
+        s = self.summary()
+        self.assertEqual(s["expenses"]["invoiced"], "2000.00")
+        self.assertEqual(s["expenses"]["paid"], "2000.00")
+        self.assertEqual(s["expenses"]["outstanding"], "0.00")

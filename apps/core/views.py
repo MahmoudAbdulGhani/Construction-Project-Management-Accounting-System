@@ -218,7 +218,7 @@ def procurement_page(request):
 
 @owner_required
 def inventory_page(request):
-    return _dashboard_page(request, "inventory", "inventory", inventory_items=[])
+    return _dashboard_page(request, "inventory", "inventory")
 
 
 @owner_required
@@ -249,7 +249,9 @@ def accounting_page(request):
 
 @login_required
 def expenses_page(request):
-    return _dashboard_page(request, "expenses", "expenses", expenses=[])
+    # The Expenses page renders empty and fills its table + metrics at
+    # runtime from /api/expenses/ (expenses.js) -- no server context needed.
+    return _dashboard_page(request, "expenses", "expenses")
 
 
 @login_required

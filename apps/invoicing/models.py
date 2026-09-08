@@ -35,6 +35,16 @@ Clients app could compute an outstanding-balance summary without owning
 the real create/update/status-transition logic, which is this ticket's
 job. Both mappings coexisting is safe: only this app's models are
 managed=True and actually own migrations for these tables.
+
+``ContractorInvoice``/``ContractorInvoiceItem`` extend the Accounts
+Payable side to contractor billing (a contractor's invoice for work,
+settled the same way a supplier invoice is). They match the
+``contractor_invoices``/``contractor_invoice_items`` tables. Because
+``contractors.Contractor`` is a managed=False reflection of a live
+Supabase table, the header stores ``contractor_id`` as a plain UUID
+column (the live schema's REFERENCES constraint is enforced by the
+database), validated against `Contractor` in the serializer -- the same
+pattern as ``payments.Payment.employee_id``/``contractor_id``.
 """
 import uuid
 
@@ -44,7 +54,7 @@ from django.db import models
 class SupplierInvoice(models.Model):
     """
     An invoice received from a supplier, optionally tied to the
-    purchase order it bills against.
+    purchase order it bills against and/or a project it's a cost of.
 
     Matches the ``supplier_invoices`` table. Has no ``created_by`` column
     in the schema (unlike PurchaseOrder), so unlike that model there's no
@@ -73,6 +83,16 @@ class SupplierInvoice(models.Model):
     # this codebase, which really are meant to gracefully null out.
     purchase_order = models.ForeignKey(
         'purchasing.PurchaseOrder', on_delete=models.PROTECT, blank=True, null=True,
+        related_name='supplier_invoices',
+    )
+
+    # SET_NULL: an invoice can be a general charge with no project
+    # attached (Project.project_id column added to match the AP/AR
+    # linking pattern on ClientInvoice). ClientInvoice uses SET_NULL for
+    # the same reason -- the project is reference context, not an audit
+    # anchor.
+    project = models.ForeignKey(
+        'projects.Project', on_delete=models.SET_NULL, blank=True, null=True,
         related_name='supplier_invoices',
     )
 
@@ -197,6 +217,108 @@ class ClientInvoice(models.Model):
 
     def __str__(self):
         return self.invoice_number
+
+
+class ContractorInvoice(models.Model):
+    """
+    An invoice received from a contractor for work done (Accounts
+    Payable), settled through payment allocations exactly like a
+    SupplierInvoice -- an OUTGOING payment to the same contractor ends up
+    advancing this invoice to PARTIALLY_PAID/PAID and reducing its
+    outstanding balance (see payments.services.allocate_payment).
+
+    Matches the ``contractor_invoices`` table. ``contractor_id`` is a
+    plain UUID column rather than a real FK, because
+    ``contractors.Contractor`` is a managed=False reflection of a live
+    Supabase table -- the live schema still REFERENCES contractors(id)
+    (enforced by the database), and the serializer validates the id.
+    Unlike SupplierInvoice there is no purchase_order (a contractor
+    invoice bills work done, not goods received against a PO), but there
+    is an optional project link so the same project-level financial
+    roll-up works for every invoice kind.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', 'Draft'
+        SENT = 'SENT', 'Sent'
+        PARTIALLY_PAID = 'PARTIALLY_PAID', 'Partially Paid'
+        PAID = 'PAID', 'Paid'
+        OVERDUE = 'OVERDUE', 'Overdue'
+        CANCELLED = 'CANCELLED', 'Cancelled'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    contractor_id = models.UUIDField(db_index=True)
+
+    # SET_NULL: same reasoning as SupplierInvoice.project -- a contractor
+    # invoice can be a general charge with no project attached, and the
+    # project is reference context, not an audit anchor.
+    project = models.ForeignKey(
+        'projects.Project', on_delete=models.SET_NULL, blank=True, null=True,
+        related_name='contractor_invoices',
+    )
+
+    invoice_number = models.CharField(max_length=100, unique=True)
+    invoice_date = models.DateField()
+    due_date = models.DateField(blank=True, null=True)
+
+    # Derived from line items by invoicing.services.recalculate_contractor_invoice_totals.
+    subtotal = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    tax_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'contractor_invoices'
+        ordering = ['-invoice_date', '-created_at']
+        verbose_name = 'Contractor Invoice'
+        verbose_name_plural = 'Contractor Invoices'
+
+    def __str__(self):
+        return self.invoice_number
+
+
+class ContractorInvoiceItem(models.Model):
+    """
+    A single line on a contractor invoice.
+
+    Matches the ``contractor_invoice_items`` table. Like
+    SupplierInvoiceItem, ``quantity``/``unit_price`` are nullable -- a
+    contractor line can be a flat charge (e.g. a fixed lump-sum works
+    item) or a measured quantity at a rate. See
+    ``invoicing.services.compute_contractor_item_amounts`` for how
+    tax_amount/total_amount are derived in each case.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # CASCADE matches the live database's FK constraint exactly.
+    contractor_invoice = models.ForeignKey(ContractorInvoice, on_delete=models.CASCADE, related_name='items')
+
+    description = models.TextField()
+    quantity = models.DecimalField(max_digits=18, decimal_places=3, blank=True, null=True)
+    unit_price = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True)
+
+    # SET_NULL: same reasoning as SupplierInvoiceItem.tax_rate.
+    tax_rate = models.ForeignKey('taxes.TaxRate', on_delete=models.SET_NULL, blank=True, null=True, related_name='contractor_invoice_items')
+
+    tax_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = 'contractor_invoice_items'
+        # No natural ordering column in the schema -- see the same note
+        # on purchasing.PurchaseOrderItem.Meta.ordering.
+        ordering = ['id']
+        verbose_name = 'Contractor Invoice Item'
+        verbose_name_plural = 'Contractor Invoice Items'
+
+    def __str__(self):
+        return f"{self.description} on {self.contractor_invoice.invoice_number}"
 
 
 class ClientInvoiceItem(models.Model):
