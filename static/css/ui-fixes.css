@@ -6,6 +6,80 @@
    1. DROPDOWNS — make every <select> look like company_settings
       .users-form-grid select + select.users-filter (audit)
    ========================================================== */
+
+/* Responsive workspace controls. Keep these overrides last so the
+   dashboard remains coherent across tablet and small-phone widths. */
+.dashboard-page .scrim { display: none; }
+.dashboard-page .sidebar.sidebar-open ~ .scrim { display: block; }
+
+@media (max-width: 1024px) {
+  .dashboard-page .main-panel { margin-left: 0; }
+  .dashboard-page .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
+  .dashboard-page .sidebar.sidebar-open { transform: translateX(0); }
+  .dashboard-page .mobile-close,
+  .dashboard-page .menu-button { display: block; }
+  .dashboard-page .project-overview-grid,
+  .dashboard-page .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-card {
+    min-height: 160px;
+    padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-page .page-wrap { padding: 20px 16px; }
+  .dashboard-page .project-title { gap: 12px; }
+  .dashboard-page .project-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 8px; }
+  .dashboard-page .project-actions .project-actions-menu { min-width: 0; }
+  .dashboard-page .project-actions button { width: 100%; height: 48px; min-height: 48px; }
+  .dashboard-page .project-actions-menu,
+  .dashboard-page .project-actions-menu > button { width: 100%; }
+  .dashboard-page .project-actions .project-actions-menu { grid-column: 1 / -1; }
+  .dashboard-page .project-tabs { gap: 8px; overflow-x: auto; scrollbar-width: thin; }
+  .dashboard-page .project-tabs button { min-height: 44px; padding-inline: 10px; white-space: nowrap; }
+  .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-card { min-height: 140px; }
+  .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-value { margin-top: 20px; font-size: 30px; }
+  .dashboard-page .phase-row { grid-template-columns: 32px minmax(0, 1fr) 80px 48px; }
+  .dashboard-page .phase-row > .status { display: none; }
+  .dashboard-page .phase-row .progress-cell { min-width: 0; }
+  .dashboard-page .row-actions .quiet-button { width: 48px; height: 48px; }
+  .dashboard-page .budget-card-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .dashboard-page .budget-card-figures .figure { min-width: 0; }
+  [data-project-dialog] form,
+  [data-detail-dialog] form { grid-template-columns: 1fr; }
+  [data-project-dialog] label,
+  [data-detail-dialog] label { min-width: 0; }
+  [data-project-dialog] input,
+  [data-project-dialog] select,
+  [data-project-dialog] textarea,
+  [data-detail-dialog] input,
+  [data-detail-dialog] select,
+  [data-detail-dialog] textarea { min-height: 46px; }
+  [data-project-dialog] form > p:last-child,
+  [data-detail-dialog] form > p:last-child { flex-wrap: wrap; }
+  [data-project-dialog] form > p:last-child button,
+  [data-detail-dialog] form > p:last-child button { min-height: 46px; }
+  .dashboard-page table { min-width: 620px; }
+  .dashboard-page .responsive-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dashboard-page .status { font-size: 11px; }
+}
+
+@media (max-width: 390px) {
+  .dashboard-page .page-wrap { padding: 16px 12px; }
+  .dashboard-page .project-badge { width: 48px; height: 48px; }
+  .dashboard-page .title-row h1 { font-size: 20px; line-height: 1.2; }
+  .dashboard-page .project-actions { grid-template-columns: 1fr; }
+  .dashboard-page .project-actions .project-actions-menu { grid-column: auto; }
+  .dashboard-page .project-actions button { height: 48px; min-height: 48px; }
+  .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-card { min-height: 128px; padding: 16px; }
+  .dashboard-page:has([data-project-detail]) [data-project-panel="overview"] .metric-value { font-size: 25px; margin-top: 14px; }
+  .dashboard-page .metric-top span { font-size: 12px; }
+  .dashboard-page .status { font-size: 12px; }
+  .dashboard-page .budget-card-figures { gap: 8px; }
+  .dashboard-page .budget-card-figures .figure { padding: 9px 10px; }
+  .dashboard-page .budget-card-figures .figure strong { font-size: 16px; }
+  .dashboard-page .project-tabs button { min-height: 48px; }
+}
 select,
 .users-form-grid select,
 .filterbar select,
