@@ -346,7 +346,7 @@ class ExpensesPageRenderTests(TestCase):
         self.assertIn("expense-search-input", content)
         self.assertIn("expense-category-filter", content)
         self.assertIn("expense-project-filter", content)
-        self.assertIn("data-status-filter", content)
+        self.assertIn("expense-status-filter", content)
         self.assertIn("data-date-from", content)
         self.assertIn("data-date-to", content)
 
@@ -451,8 +451,8 @@ class WorkforcePageRenderTests(WithUsersTableMixin, TestCase):
         self.assertIn("Workforce", content)
         self.assertIn("workforce.js", content)
         self.assertIn("workforce.css", content)
-        self.assertIn("data-workforce-rows", content)
-        self.assertIn("workforce-search-input", content)
+        self.assertIn("data-employee-rows", content)
+        self.assertIn("employee-search-input", content)
 
     def test_accountant_cannot_open_workforce_page(self):
         accountant = AppUser.objects.create(
@@ -481,17 +481,21 @@ class WorkforcePageRenderTests(WithUsersTableMixin, TestCase):
         )
         content = self.client.get("/workforce/").content.decode()
         for hook in [
-            "data-workforce-page-error", "data-workforce-add",
-            "data-employee-form-dialog", "data-employee-form", "data-employee-form-error",
-            "data-employee-detail-dialog", "data-employee-edit", "data-employee-delete",
-            "data-assignment-state", "data-assignment-new", "data-assignment-dialog",
-            "data-assignment-form", "data-assignment-error", "data-delete-dialog",
+            "data-employee-new", "data-employee-rows",
+            "data-employee-dialog", "data-employee-close",
+            "data-detail-name", "data-detail-status",
+            'data-tab="assignments"', 'data-tab="assign"',
+            'data-tab="phases"', "data-tab-panel",
+            "data-employee-create", "data-employee-form",
+            "data-employee-edit-id", "data-employee-form-eyebrow",
+            "data-employee-form-title", "data-employee-create-close",
+            "data-employee-create-cancel", "data-employee-form-submit",
+            "data-employee-assign-project", "data-employee-assign-date",
         ]:
             self.assertIn(hook, content)
         for field in [
             "name", "employee_number", "phone", "email", "position", "department",
-            "labor_rate", "employment_status", "project_id", "role_on_project",
-            "assigned_at", "released_at",
+            "labor_rate", "employment_status", "assign_project", "assigned_at",
         ]:
             self.assertIn(f'name="{field}"', content)
 
@@ -506,17 +510,17 @@ class WorkforcePageRenderTests(WithUsersTableMixin, TestCase):
             "/accounts/login/", {"username": "workforce_empty", "password": "pass12345"},
         )
         content = self.client.get("/workforce/").content.decode()
-        self.assertIn("Loading workforce…", content)
+        self.assertIn("Loading employees…", content)
         self.assertNotIn("EMP-0001", content)
-        self.assertNotIn("Site Engineer", content)
+        self.assertNotIn("WKR-", content)
         self.assertNotIn("$", content)
 
     def test_js_wires_existing_workforce_endpoints_without_prompts(self):
         js = (settings.BASE_DIR / "static/js/workforce.js").read_text(encoding="utf-8")
         for token in [
             "/api/employees/", "/api/projects/projects/", '"POST"',
-            '"PATCH"', '"DELETE"', "data-assignment-retry",
-            "data-workforce-retry", "assignmentErrors",
+            '"PATCH"', '"DELETE"', "data-employee-edit-table",
+            "data-status-employee", "data-employee-form-submit",
         ]:
             self.assertIn(token, js)
         self.assertNotIn("prompt(", js)
@@ -583,8 +587,8 @@ class InvoicePageRenderTests(TestCase):
             'data-metric="receivables"', 'data-metric="payables"',
             'data-metric="overdue"', 'data-metric="total"',
             "data-new-invoice", "data-invoice-dialog", "data-invoice-form",
-            "data-invoice-detail", "data-add-item", "data-item-rows",
-            "data-item-form", "data-tax-rate",
+            "data-invoice-detail", "data-item-rows", "data-item-form",
+            "data-item-cancel", "data-item-form-title", "data-tax-rate",
         ]:
             self.assertIn(hook, content)
 
@@ -702,7 +706,8 @@ class ProcurementPageRenderTests(WithUsersTableMixin, TestCase):
         js = (settings.BASE_DIR / "static/js/procurement.js").read_text(encoding="utf-8")
         for token in [
             "data-po-edit", "data-po-submit-action", "data-po-approve", "data-po-cancel",
-            "data-po-remove-item", "data-receive", "window.confirm",
+            "data-po-remove-item", "data-receive", "data-po-confirm-dialog",
+            "data-po-confirm-ok", "data-po-confirm-cancel",
             "/api/suppliers/suppliers/", "/api/inventory/materials/",
             "/api/purchasing/purchase-orders/", "/api/purchasing/purchase-order-items/",
             "submit", "approve", "cancel", "created_by",
@@ -760,33 +765,41 @@ class InventoryPageRenderTests(WithUsersTableMixin, TestCase):
         self.assertIn("inventory.js", content)
         self.assertIn("inventory.css", content)
         self.assertIn("data-inventory-rows", content)
-        self.assertIn('data-metric="stock"', content)
-        self.assertIn('data-metric="low"', content)
-        self.assertIn('data-metric="value"', content)
-        self.assertIn('data-metric="transfers"', content)
-        self.assertIn("inventory-search-input", content)
-        self.assertIn("inventory-warehouse-filter", content)
-        self.assertIn("data-status-filter", content)
-        self.assertIn("<th>On hand</th>", content)
+        self.assertIn('data-inventory-metric="value"', content)
+        self.assertIn('data-inventory-metric="items"', content)
+        self.assertIn('data-inventory-metric="low"', content)
+        self.assertIn('data-inventory-metric="warehouses"', content)
+        self.assertIn("data-inventory-search", content)
+        self.assertIn("data-inventory-warehouse", content)
+        self.assertIn("data-inventory-stock", content)
+        self.assertIn("data-inventory-category", content)
+        self.assertIn("<th>Available</th>", content)
         self.assertIn("<th>Actions</th>", content)
-        self.assertIn('colspan="7"', content)
-        # 1B-2: record-movement dialog + form + its fields.
-        self.assertIn("data-movement-new", content)
-        self.assertIn("data-movement-dialog", content)
-        self.assertIn("data-movement-form", content)
+        self.assertIn('colspan="8"', content)
+        # Stock movements panel (search/filter/date-range hooks).
+        self.assertIn("data-inventory-movement-rows", content)
+        self.assertIn("data-inventory-movement-count", content)
+        self.assertIn("data-movement-search", content)
         self.assertIn("data-movement-type", content)
-        self.assertIn("data-movement-material", content)
-        self.assertIn("data-movement-warehouse", content)
-        self.assertIn("data-movement-from", content)
-        self.assertIn("data-movement-to", content)
-        self.assertIn("data-movement-qty", content)
-        self.assertIn("data-movement-date", content)
-        self.assertIn("data-movement-reference", content)
-        self.assertIn("data-movement-notes", content)
-        self.assertIn("data-movement-close", content)
-        # 1B-2: movement history dialog.
-        self.assertIn("data-movement-history-dialog", content)
-        self.assertIn("data-movement-history-rows", content)
+        self.assertIn("data-movement-date-from", content)
+        self.assertIn("data-movement-date-to", content)
+        # Inventory management tabs (materials / categories / warehouses).
+        self.assertIn('data-inventory-management-tab="materials"', content)
+        self.assertIn('data-inventory-management-tab="categories"', content)
+        self.assertIn('data-inventory-management-tab="warehouses"', content)
+        self.assertIn('data-inventory-management-content="materials"', content)
+        self.assertIn("data-material-management-rows", content)
+        self.assertIn("data-category-management-rows", content)
+        self.assertIn("data-warehouse-management-rows", content)
+        # 1B-2: shared create/edit dialog driven by data-inventory-action.
+        self.assertIn('data-inventory-action="material"', content)
+        self.assertIn('data-inventory-action="category"', content)
+        self.assertIn('data-inventory-action="warehouse"', content)
+        self.assertIn("data-inventory-dialog", content)
+        self.assertIn("data-inventory-form", content)
+        self.assertIn("data-inventory-fields", content)
+        self.assertIn("data-inventory-cancel", content)
+        self.assertIn("data-inventory-submit", content)
 
     def test_accountant_cannot_open_inventory_page(self):
         self._login("inv_accountant", "accountant-pass-123")

@@ -122,14 +122,19 @@ def _csrf_required(request) -> bool:
     """
     Whether CSRF enforcement should apply for this request.
 
-    CSRF is enforced for authenticated sessions on unsafe methods (DRF's
-    standard behaviour). When Django is running with DEBUG=True the check
-    is relaxed so local development / API clients (e.g. Thunder Client,
-    Postman) can exercise the flow without manually forwarding the
-    csrftoken cookie.  This NEVER weakens production: DEBUG=False keeps
-    CSRF fully enforced.
+    Always returns True: DRF's SessionAuthentication does not add CSRF
+    protection against cross-site requests by default (it skips the check
+    for non-authenticated or GET requests), so authenticated browser
+    sessions must perform the csrfmiddlewaretoken/X-CSRFToken check on
+    every unsafe method. The page frontends already forward the token
+    (see static/js fetch helpers); local API clients can read the
+    csrftoken cookie after login when CSRF_COOKIE_HTTPONLY=False (the
+    settings default).
+
+    Regression tests use APIClient(enforce_csrf_checks=True) to prove
+    unsafe methods are rejected without the token.
     """
-    return not getattr(settings, 'DEBUG', False)
+    return True
 
 
 class UserSessionAuthentication(SessionAuthentication):
@@ -258,4 +263,8 @@ class JwtCookieAuthentication(_SimpleJwtAuth):
         user = _resolve_user_from_jwt_token(raw_token)
         if user is None:
             return None
+        # Unlike an Authorization header, browsers attach auth cookies to
+        # cross-site requests automatically. Require a matching CSRF token
+        # before accepting this cookie as a credential.
+        SessionAuthentication().enforce_csrf(request)
         return user, None

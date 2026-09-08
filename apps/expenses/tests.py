@@ -264,6 +264,44 @@ class ExpenseUpdateDeleteApiTests(ExpensesTestBase):
         gone = self.client.get(f"/api/expenses/expenses/{expense.id}/")
         self.assertEqual(gone.status_code, 404)
 
+    def _pay_expense(self, expense):
+        """Drive an expense PENDING->APPROVED->PAID through the API actions
+        (the only way status changes -- status is read-only on PATCH), so a
+        GL entry is booked alongside the PAID flag."""
+        self.assertEqual(self.client.post(f"/api/expenses/expenses/{expense.id}/approve/").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/expenses/expenses/{expense.id}/mark_paid/").status_code, 200)
+
+    def test_paid_expense_cannot_be_patched(self):
+        expense = self.make_expense()
+        self._pay_expense(expense)
+        response = self.client.patch(
+            f"/api/expenses/expenses/{expense.id}/",
+            {"description": "Shouldn't stick", "amount": "999.00"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("status", response.json())
+        expense.refresh_from_db()
+        self.assertNotEqual(expense.description, "Shouldn't stick")
+        self.assertEqual(expense.amount, Decimal("250.00"))
+
+    def test_paid_expense_cannot_be_deleted(self):
+        expense = self.make_expense()
+        self._pay_expense(expense)
+        response = self.client.delete(f"/api/expenses/expenses/{expense.id}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Expense.objects.filter(id=expense.id).count(), 1)
+
+    def test_unpaid_expense_can_still_be_patched_and_deleted(self):
+        expense = self.make_expense()
+        approved = self.client.post(f"/api/expenses/expenses/{expense.id}/approve/")
+        self.assertEqual(approved.status_code, 200)
+        patch = self.client.patch(
+            f"/api/expenses/expenses/{expense.id}/", {"notes": "re-check"}, format="json"
+        )
+        self.assertEqual(patch.status_code, 200)
+        delete = self.client.delete(f"/api/expenses/expenses/{expense.id}/")
+        self.assertEqual(delete.status_code, 204)
+
 
 class ExpenseFilterAndPaginationTests(ExpensesTestBase):
     """

@@ -14,8 +14,12 @@ from .models import (
 
 class NotificationSerializer(serializers.ModelSerializer):
     """
-    Serializer for Notification CRUD.
+    Serializer for Notification reads.
 
+    ``user`` is read-only: a notification always belongs to the recipient
+    assigned at creation by the alert services (notifications are never
+    created through this API -- the viewset has no create route, so no
+    caller can assign themselves -- or anyone else -- a targeted alert).
     ``is_read`` is read-only here: it only ever changes through the
     viewset's mark_read/mark_all_read actions, never a raw PATCH -- same
     read-only-status pattern used for every other state field in this
@@ -28,7 +32,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'user', 'notification_type', 'title', 'message',
             'entity_type', 'entity_id', 'is_read', 'created_at',
         ]
-        read_only_fields = ['is_read', 'created_at']
+        read_only_fields = ['user', 'is_read', 'created_at']
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

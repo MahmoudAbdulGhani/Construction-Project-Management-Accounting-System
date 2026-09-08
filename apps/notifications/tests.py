@@ -11,7 +11,6 @@ Organized into:
 from datetime import timedelta
 from decimal import Decimal
 
-from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -236,19 +235,32 @@ class GenerateAllNotificationsTests(NotificationsTestBase):
 class NotificationAPITests(NotificationsTestBase):
     def setUp(self):
         super().setUp()
-        django_user = DjangoUser.objects.create_user(username="apitester5", password="pass12345")
         self.client = APIClient()
-        self.client.force_authenticate(user=django_user)
+        self.client.force_authenticate(user=self.owner)
 
-    def test_create_and_list_notification(self):
-        response = self.client.post("/api/notifications/notifications/", {
-            "user": str(self.owner.id), "notification_type": "LOW_INVENTORY",
-            "title": "Low stock", "message": "Cement is low.",
-        }, format="json")
-        self.assertEqual(response.status_code, 201)
+    def test_list_returns_only_own_notifications(self):
+        Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="Low stock", message="Cement is low.")
+        Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="Overdue", message="Invoice overdue.")
 
-        list_response = self.client.get(f"/api/notifications/notifications/?user={self.owner.id}")
+        list_response = self.client.get("/api/notifications/notifications/")
         self.assertEqual(list_response.json()["count"], 1)
+        self.assertEqual(list_response.json()["results"][0]["user"], str(self.owner.id))
+
+    def test_user_query_param_cannot_widen_scope(self):
+        # The legacy ?user= filter must not let a user read someone else's inbox.
+        Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="Mine", message="Only mine.")
+        Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="Theirs", message="Not mine.")
+
+        response = self.client.get(f"/api/notifications/notifications/?user={self.accountant.id}")
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["results"][0]["title"], "Mine")
+
+    def test_cannot_create_notification_via_api(self):
+        response = self.client.post("/api/notifications/notifications/", {
+            "user": str(self.accountant.id), "notification_type": "LOW_INVENTORY",
+            "title": "Spoofed", "message": "Should be rejected.",
+        }, format="json")
+        self.assertEqual(response.status_code, 405)
 
     def test_mark_read(self):
         notification = Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="t", message="m")
@@ -258,18 +270,18 @@ class NotificationAPITests(NotificationsTestBase):
         notification.refresh_from_db()
         self.assertTrue(notification.is_read)
 
-    def test_is_read_cannot_be_set_directly_via_create(self):
-        response = self.client.post("/api/notifications/notifications/", {
-            "user": str(self.owner.id), "notification_type": "LOW_INVENTORY",
-            "title": "t", "message": "m", "is_read": True,
-        }, format="json")
-        self.assertFalse(response.json()["is_read"])
+    def test_cannot_mark_another_users_notification_read(self):
+        notification = Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="t", message="m")
+        response = self.client.post(f"/api/notifications/notifications/{notification.id}/mark_read/")
+        self.assertEqual(response.status_code, 404)
+        notification.refresh_from_db()
+        self.assertFalse(notification.is_read)
 
     def test_mark_all_read_scoped_to_filtered_queryset(self):
         Notification.objects.create(user=self.owner, notification_type="LOW_INVENTORY", title="t1", message="m1")
         Notification.objects.create(user=self.accountant, notification_type="OVERDUE_INVOICE", title="t2", message="m2")
 
-        response = self.client.post(f"/api/notifications/notifications/mark_all_read/?user={self.owner.id}")
+        response = self.client.post("/api/notifications/notifications/mark_all_read/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["marked_read"], 1)
 

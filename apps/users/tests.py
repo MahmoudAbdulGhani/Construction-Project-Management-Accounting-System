@@ -15,7 +15,7 @@ table, so every test class mixes in ``WithUsersTableMixin`` to create it
 for the duration of the class, mirroring the other domain apps.
 """
 from django.core import mail
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import status
@@ -353,3 +353,115 @@ class AppUserSessionBridgingTests(WithUsersTableMixin, TestCase):
         AppUserSessionMiddleware(get_response)(request)
         # no app users.User matches, so the Django user is left authenticating
         self.assertEqual(captured["user"], django_user)
+
+
+class SessionAuthCsrfEnforcementTests(WithUsersTableMixin, TestCase):
+    """
+    Phase-1 hardening regression: ``UserSessionAuthentication`` enforces
+    CSRF on authenticated unsafe methods UNCONDITIONALLY -- even when
+    Django runs with DEBUG=True (it previously relaxed the check in
+    DEBUG). Uses ``APIClient(enforce_csrf_checks=True)`` so CSRF is
+    actually verified for the DRF session-authenticated request, exactly
+    as it is in production.
+
+    The web login view writes both the Django session and HttpOnly JWT
+    cookies; the API client here deliberately forwards only the session
+    cookie (+ csrftoken), so the request authenticates through
+    UserSessionAuthentication -- the same path every browser-driven
+    fetch on the dashboard uses -- rather than via a JWT cookie, which
+    is not CSRF-relevant by design.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create(
+            username="csrfowner", email="csrfowner@example.com", password_hash="x",
+            first_name="C", last_name="O", role=Role.OWNER,
+        )
+        self.user.set_password("csrf-pass-123")
+        self.user.save(update_fields=["password_hash"])
+
+    def _login(self):
+        """Log in through the server-rendered login page and return:
+        (sessionid, csrftoken) -- the session cookie plus the CSRF cookie."""
+        boot = Client()
+        page = boot.get("/accounts/login/")
+        csrftoken = page.cookies["csrftoken"].value
+        resp = boot.post(
+            "/accounts/login/",
+            {"username": "csrfowner", "password": "csrf-pass-123",
+             "csrfmiddlewaretoken": csrftoken},
+        )
+        # Login redirects to the dashboard after a successful auth.
+        self.assertEqual(resp.status_code, 302)
+        sessionid = boot.cookies["sessionid"].value
+        return sessionid, csrftoken
+
+    def _session_api_client(self, csrftoken):
+        """An APIClient with enforced CSRF carrying only the session cookie."""
+        client = APIClient(enforce_csrf_checks=True)
+        if csrftoken:
+            client.cookies["csrftoken"] = csrftoken
+        return client
+
+    def test_unsafe_post_without_csrf_token_is_rejected(self):
+        sessionid, csrftoken = self._login()
+        client = self._session_api_client(csrftoken)
+        client.cookies["sessionid"] = sessionid
+        # Deliberately no X-CSRFToken header: mark_all_read is a POST and
+        # therefore unsafe, so without the token the session-authenticated
+        # request must be refused -- this is the core regression.
+        response = client.post("/api/notifications/notifications/mark_all_read/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_unsafe_post_with_valid_csrf_token_succeeds(self):
+        sessionid, csrftoken = self._login()
+        client = self._session_api_client(csrftoken)
+        client.cookies["sessionid"] = sessionid
+        response = client.post(
+            "/api/notifications/notifications/mark_all_read/",
+            HTTP_X_CSRFTOKEN=csrftoken,
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_safe_get_does_not_require_csrf_token(self):
+        sessionid, csrftoken = self._login()
+        client = self._session_api_client(csrftoken)
+        client.cookies["sessionid"] = sessionid
+        response = client.get("/api/notifications/notifications/?is_read=false")
+        self.assertEqual(response.status_code, 200)
+
+    def test_unsafe_jwt_cookie_post_without_csrf_token_is_rejected(self):
+        boot = Client()
+        page = boot.get("/accounts/login/")
+        csrftoken = page.cookies["csrftoken"].value
+        response = boot.post(
+            "/accounts/login/",
+            {"username": "csrfowner", "password": "csrf-pass-123",
+             "csrfmiddlewaretoken": csrftoken},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        client = APIClient(enforce_csrf_checks=True)
+        client.cookies["access_token"] = boot.cookies["access_token"].value
+        response = client.post("/api/notifications/notifications/mark_all_read/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_unsafe_jwt_cookie_post_with_csrf_token_succeeds(self):
+        boot = Client()
+        page = boot.get("/accounts/login/")
+        csrftoken = page.cookies["csrftoken"].value
+        response = boot.post(
+            "/accounts/login/",
+            {"username": "csrfowner", "password": "csrf-pass-123",
+             "csrfmiddlewaretoken": csrftoken},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        client = APIClient(enforce_csrf_checks=True)
+        client.cookies["access_token"] = boot.cookies["access_token"].value
+        client.cookies["csrftoken"] = csrftoken
+        response = client.post(
+            "/api/notifications/notifications/mark_all_read/",
+            HTTP_X_CSRFTOKEN=csrftoken,
+        )
+        self.assertEqual(response.status_code, 200)
