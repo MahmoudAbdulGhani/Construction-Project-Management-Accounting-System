@@ -189,6 +189,17 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_LOGO_BUCKET = os.getenv("SUPABASE_LOGO_BUCKET", "logo")
 
+# Supabase Storage also holds uploaded documents (documents app), in a
+# dedicated bucket, using the same REST-object pattern as the logo upload
+# (service-role auth for writes; the public URL for reads/display).
+# SUPABASE_DOCUMENT_STORAGE is an explicit flag, not inferred from the keys
+# alone, so tests can pin local-disk (default_storage/MEDIA_ROOT) behavior
+# regardless of what .env happens to contain.
+SUPABASE_DOCUMENTS_BUCKET = os.getenv("SUPABASE_DOCUMENTS_BUCKET", "documents")
+SUPABASE_DOCUMENT_STORAGE = bool(
+    SUPABASE_URL and (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)
+)
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

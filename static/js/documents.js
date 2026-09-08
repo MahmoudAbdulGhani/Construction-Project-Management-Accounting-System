@@ -35,13 +35,8 @@
     return res.json();
   }
 
-  async function fetchAllDocs() {
-    const params = new URLSearchParams();
-    if (state.search) params.set("search", state.search);
-    if (state.entityType) params.set("entity_type", state.entityType);
-
+  async function fetchAll(url) {
     const rows = [];
-    let url = `${API}?${params.toString()}`;
     while (url) {
       const data = await api(url);
       rows.push(...(data.results || []));
@@ -50,10 +45,32 @@
     return rows;
   }
 
+  async function fetchAllDocs() {
+    const params = new URLSearchParams();
+    if (state.search) params.set("search", state.search);
+    if (state.entityType) params.set("entity_type", state.entityType);
+    return fetchAll(`${API}?${params.toString()}`);
+  }
+
   const ENTITY_LABELS = {
     client: "Client", supplier: "Supplier", contractor: "Contractor", project: "Project",
     purchase_order: "Purchase order", expense: "Expense", client_invoice: "Client invoice",
     supplier_invoice: "Supplier invoice", change_order: "Change order",
+  };
+
+  // Where to find live records for each entity type so the upload form can
+  // offer a pick-list instead of a hand-typed UUID. Each entry maps to that
+  // module's list API and how to format one of its rows for display.
+  const ENTITY_SOURCES = {
+    client: { url: "/api/clients/clients/", label: (r) => r.company_name || r.name },
+    supplier: { url: "/api/suppliers/suppliers/", label: (r) => r.company_name || r.name },
+    contractor: { url: "/api/contractors/", label: (r) => r.company_name || r.name },
+    project: { url: "/api/projects/projects/", label: (r) => `${r.name}${r.code ? ` (${r.code})` : ""}` },
+    purchase_order: { url: "/api/purchasing/purchase-orders/", label: (r) => r.po_number },
+    expense: { url: "/api/expenses/expenses/", label: (r) => r.description },
+    client_invoice: { url: "/api/invoicing/client-invoices/", label: (r) => r.invoice_number },
+    supplier_invoice: { url: "/api/invoicing/supplier-invoices/", label: (r) => r.invoice_number },
+    change_order: { url: "/api/projects/change-orders/", label: (r) => r.number },
   };
 
   function fmtSize(bytes) {
@@ -79,14 +96,41 @@
         <td>${esc(d.uploaded_by_name || "—")}</td>
         <td>${esc((d.uploaded_at || "").slice(0, 10))}</td>
         <td class="doc-row-actions">
-          <a href="${d.file_url}" target="_blank" rel="noopener">Download</a>
+          <a href="#" data-doc-download="${d.id}" data-file-name="${esc(d.file_name)}">Download</a>
           <button type="button" class="quiet-button" data-doc-delete="${d.id}">Delete</button>
         </td>
       </tr>`).join("");
 
+    $$("[data-doc-download]", tbody).forEach((btn) => {
+      btn.addEventListener("click", (e) => { e.preventDefault(); downloadDoc(btn.dataset.docDownload, btn.dataset.fileName); });
+    });
     $$("[data-doc-delete]", tbody).forEach((btn) => {
       btn.addEventListener("click", () => deleteDoc(btn.dataset.docDelete));
     });
+  }
+
+  async function downloadDoc(id, fileName) {
+    const response = await fetch(`${API}${id}/download/`, { credentials: "same-origin" });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try { const body = await response.json(); detail = body.detail || detail; } catch (e) { /* ignore */ }
+      showDownloadError(detail);
+      return;
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName || "document";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  function showDownloadError(message) {
+    $("[data-doc-error-message]").textContent = message;
+    $("[data-doc-error-dialog]").showModal();
   }
 
   function renderMetrics() {
@@ -132,19 +176,88 @@
     });
   }
 
+  async function populateEntitySelect(entityType) {
+    const select = $("[data-entity-select]");
+    if (!select) return;
+    const placeholder = '<option value="">Select a record…</option>';
+    select.innerHTML = placeholder;
+    if (!entityType) {
+      select.disabled = true;
+      return;
+    }
+    select.disabled = true;
+    select.insertAdjacentHTML("beforeend", '<option value="">Loading records…</option>');
+    const src = ENTITY_SOURCES[entityType];
+    try {
+      const rows = await fetchAll(src.url);
+      select.innerHTML = placeholder;
+      if (!rows.length) {
+        select.insertAdjacentHTML("beforeend", '<option value="">No records found</option>');
+      } else {
+        rows.forEach((r) => select.insertAdjacentHTML("beforeend", `<option value="${esc(r.id)}">${esc(String(src.label(r) || r.id))}</option>`));
+      }
+      select.disabled = false;
+    } catch (e) {
+      select.innerHTML = placeholder;
+      select.insertAdjacentHTML("beforeend", `<option value="">Could not load records: ${esc(e.message)}</option>`);
+      select.disabled = false;
+    }
+  }
+
   function bindUpload() {
     const overlay = $("[data-doc-upload]");
     const form = $("[data-doc-upload-form]");
-    $("[data-doc-new]").addEventListener("click", () => { overlay.hidden = false; });
+    const manualField = $("[data-doc-manual-field]");
+    const manualInput = $("[data-entity-id-manual]");
+    const entityTypeSelect = $("[data-entity-type]");
+    const entityIdSelect = $("[data-entity-select]");
+    if (!overlay || !form) return;
+
+    $("[data-doc-new]").addEventListener("click", () => {
+      overlay.hidden = false;
+      manualField.hidden = true;
+      manualInput.value = "";
+      populateEntitySelect(entityTypeSelect ? entityTypeSelect.value : "");
+    });
     $("[data-doc-upload-close]").addEventListener("click", () => { overlay.hidden = true; });
     $("[data-doc-upload-cancel]").addEventListener("click", () => { overlay.hidden = true; });
+    $("[data-doc-manual-toggle]").addEventListener("click", () => {
+      manualField.hidden = !manualField.hidden;
+      if (!manualField.hidden) manualInput.focus();
+    });
+
+    // Delegated so a stale/partial DOM can't break binding; fill the record
+    // list whenever the chosen entity type changes.
+    form.addEventListener("change", (e) => {
+      if (e.target && e.target.hasAttribute("data-entity-type")) {
+        populateEntitySelect(e.target.value);
+      }
+    });
+    if (entityIdSelect) {
+      entityIdSelect.addEventListener("change", () => {
+        manualField.hidden = true;
+        manualInput.value = "";
+      });
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const formData = new FormData(form);
+      const selectedId = entityIdSelect ? entityIdSelect.value : "";
+      const manualId = manualInput.value.trim();
+      if (selectedId) {
+        formData.set("entity_id", selectedId);
+      } else if (manualId) {
+        formData.set("entity_id", manualId);
+      } else {
+        alert("Select a record or enter an Entity ID manually.");
+        return;
+      }
       try {
         await api(API, { method: "POST", body: formData });
         overlay.hidden = true;
         form.reset();
+        manualField.hidden = true;
         await refresh();
       } catch (err) {
         alert("Could not upload document: " + err.message);
@@ -155,6 +268,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     bindFilters();
     bindUpload();
+    document.querySelectorAll("[data-doc-error-close]").forEach((b) => b.addEventListener("click", () => $("[data-doc-error-dialog]").close()));
     refresh();
   });
 })();

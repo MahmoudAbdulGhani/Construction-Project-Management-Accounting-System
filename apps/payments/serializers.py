@@ -155,9 +155,44 @@ class PaymentAllocationSerializer(serializers.ModelSerializer):
     result, rather than a plain ModelSerializer.create().
     """
 
+    payment_number = serializers.CharField(source='payment.payment_number', read_only=True)
+    payment_date = serializers.DateField(source='payment.payment_date', read_only=True)
+    payee_name = serializers.SerializerMethodField()
+    invoice_number = serializers.SerializerMethodField()
+    invoice_type = serializers.SerializerMethodField()
+
     class Meta:
         model = PaymentAllocation
-        fields = ['id', 'payment', 'client_invoice', 'supplier_invoice', 'contractor_invoice', 'allocated_amount']
+        fields = [
+            'id', 'payment', 'payment_number', 'payment_date', 'payee_name',
+            'client_invoice', 'supplier_invoice', 'contractor_invoice',
+            'invoice_number', 'invoice_type', 'allocated_amount',
+        ]
+
+    def get_payee_name(self, obj):
+        payment = obj.payment
+        if payment.client_id:
+            return payment.client.name
+        if payment.supplier_id:
+            return payment.supplier.name
+        if payment.employee_id:
+            return Employee.objects.filter(pk=payment.employee_id).values_list('name', flat=True).first()
+        if payment.contractor_id:
+            return Contractor.objects.filter(pk=payment.contractor_id).values_list('name', flat=True).first()
+        return None
+
+    def get_invoice_number(self, obj):
+        invoice = obj.client_invoice or obj.supplier_invoice or obj.contractor_invoice
+        return invoice.invoice_number if invoice else None
+
+    def get_invoice_type(self, obj):
+        if obj.client_invoice_id:
+            return 'Client invoice'
+        if obj.supplier_invoice_id:
+            return 'Supplier invoice'
+        if obj.contractor_invoice_id:
+            return 'Contractor invoice'
+        return None
 
     def validate(self, attrs):
         # Mirrors the live database's CHECK constraint (defense in

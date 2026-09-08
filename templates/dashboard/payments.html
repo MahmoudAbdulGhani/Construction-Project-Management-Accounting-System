@@ -48,6 +48,12 @@
     <section><h3>Receipt</h3><div data-payment-detail-receipt>Loading…</div></section>
   </div>
 </dialog>
+<dialog class="payment-dialog" data-allocation-detail-dialog>
+  <div class="payment-detail-shell"><header><div><p class="eyebrow">ALLOCATION RECORD</p><h2>Allocation detail</h2></div><button type="button" data-allocation-detail-close aria-label="Close">×</button></header>
+    <div class="payment-detail-grid" data-allocation-detail-fields></div>
+    <footer><button type="button" class="quiet-button" data-allocation-detail-close>Close</button></footer>
+  </div>
+</dialog>
 <dialog class="payment-dialog" data-receipt-dialog><form data-receipt-form><header><div><p class="eyebrow">PAYMENT RECEIPT</p><h2 data-receipt-title>Issue receipt</h2></div><button type="button" data-receipt-close aria-label="Close">×</button></header><input type="hidden" name="payment"><div class="payment-form-grid"><label>Receipt number *<input name="receipt_number" required maxlength="100"></label><label>Receipt date *<input name="receipt_date" type="date" required></label><label>Payment amount<input name="amount" readonly></label><label>Reference<input name="reference" maxlength="255"></label></div><p class="form-error" data-receipt-error hidden></p><footer><button type="button" class="quiet-button" data-receipt-close>Cancel</button><button type="submit" class="primary-button">Issue receipt</button></footer></form></dialog>
 <dialog class="payment-dialog receipt-preview-dialog" data-receipt-preview-dialog>
   <div class="receipt-preview-shell">
@@ -58,4 +64,4 @@
   </div>
 </dialog>
 {% endblock %}
-{% block page_js %}<script src="{% static 'js/payments.js' %}?v=20260906-2" defer></script>{% endblock %}
+{% block page_js %}<script src="{% static 'js/payments.js' %}?v=20260908-alloc-dialog" defer></script>{% endblock %}
