@@ -10,6 +10,36 @@
     gap: 9px;
 }
 
+/* filterbar — match Accounting/Expenses header design */
+.module-table .filterbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 16px 18px !important;
+    background: linear-gradient(180deg,#f3f7f4,#e8f0ec) !important;
+    border-bottom: 1px solid #b5c8c2 !important;
+}
+.module-table .local-search {
+    flex: 0 0 260px !important;
+    min-height: 38px !important;
+    border: 1px solid #95aea8 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    padding: 0 12px !important;
+    box-shadow: inset 0 1px 2px rgba(6,61,60,.04) !important;
+}
+.module-table .local-search:focus-within { border-color: #078078 !important; box-shadow: 0 0 0 3px rgba(8,143,133,.12) !important; }
+
+/* heading 3 buttons — match Procurement Receive goods tall pill */
+.invoice-page-actions .primary-button {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
+
 .supplier-invoice-button {
     background: #075e59;
 }

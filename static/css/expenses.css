@@ -1,9 +1,71 @@
 /* Expenses page (1A-1) -- built on the shared v3 dashboard look
    (site-exact.css/v3-fixes.css/projects.css); only adds what's specific
    to this page. */
+/* filterbar + search — match Accounting header design (keep actual filters) */
+.module-table .filterbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 18px;
+    background: linear-gradient(180deg,#f3f7f4,#e8f0ec);
+    border-bottom: 1px solid #b5c8c2;
+}
+.filterbar-dates {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding-top: 8px !important;
+    border-top: none !important;
+}
+.filterbar-dates label.quiet-button {
+    width: 100% !important;
+    max-width: 260px !important;
+}
+.module-table .filterbar:first-of-type {
+    border-bottom: none !important;
+    padding-bottom: 8px !important;
+}
+.module-table .local-search {
+    flex: 1 1 220px;
+    min-height: 38px;
+    border: 1px solid #95aea8;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    box-shadow: inset 0 1px 2px rgba(6,61,60,.04);
+}
+.module-table .local-search:focus-within { border-color: #078078; box-shadow: 0 0 0 3px rgba(8,143,133,.12); }
 .local-search input { border: 0; background: none; outline: none; flex: 1; font-family: inherit; font-size: 10px; color: inherit; }
-label.quiet-button { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
-label.quiet-button input[type="date"] { border: 0; background: none; font-family: inherit; font-size: 9px; color: inherit; }
+label.quiet-button {
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr);
+    align-items: center;
+    min-height: 38px;
+    border: 1px solid #a5b9b3;
+    border-radius: 10px;
+    background: #f8fbf9;
+    padding-left: 10px;
+    gap: 6px;
+    cursor: default;
+    font-size: 9px;
+    font-weight: 800;
+    color: #486460;
+    white-space: nowrap;
+}
+label.quiet-button input[type="date"] {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    border: 0;
+    border-left: 1px solid #c4d2ce;
+    border-radius: 0 9px 9px 0;
+    background: transparent;
+    padding: 6px;
+    font-family: inherit;
+    font-size: 10px;
+    color: inherit;
+}
 .filterbar select.quiet-select { min-height: 34px; padding: 0 8px; border: 1px solid #a5b9b3; border-radius: 9px; background: #f7faf8; font: inherit; font-size: 10px; color: #174b4a; }
 .filterbar .quiet-button.active { background: #08736c; border-color: #08736c; color: #f5fffc; font-weight: 800; }
 
@@ -28,3 +90,11 @@ label.quiet-button input[type="date"] { border: 0; background: none; font-family
 .expense-form-grid select { padding: 9px 8px; }
 .expense-error { grid-column: 1 / -1; background: #f6ded9; color: #8b2922; border-radius: 8px; padding: 10px; white-space: pre-wrap; }
 .expense-form-grid [hidden] { display: none !important; }
+
+/* keep search as it was (great) — only From/To a bit smaller than other filters to fit one line */
+.filterbar { flex-wrap: wrap; gap: 8px; }
+label.quiet-button { gap: 4px; padding: 0 8px; }
+label.quiet-button input[type="date"] { min-width: 100px; width: 108px; padding: 5px 5px; font-size: 8.5px; }
+#expense-status-filter,
+#expense-category-filter,
+#expense-project-filter { min-width: 120px; }

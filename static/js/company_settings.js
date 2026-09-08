@@ -64,10 +64,6 @@
   if (taxesPane) { try { initTaxesPane(); } catch (e) { console.error("taxes", e); } }
 
   var auditPane = document.querySelector('[data-settings-pane="audit"]');
-  if (auditPane) { initAuditPane(); }
-
-  var finPane = document.querySelector('[data-settings-pane="financial"]');
-  if (finPane) { initFinancialPane(); }
   if (auditPane) { try { initAuditPane(); } catch (e) { console.error("audit", e); } }
 
   var finPane = document.querySelector('[data-settings-pane="financial"]');
@@ -85,6 +81,11 @@ function escapeHtml(s) {
 
 function fancySelect(select) {
   "use strict";
+  // don't double-wrap (called twice due to duplicate init + ui-fixes)
+  if (select.classList.contains("users-select-native") || select.classList.contains("ui-fancy-native")
+      || (select.parentElement && (select.parentElement.classList.contains("users-select") || select.parentElement.classList.contains("ui-fancy-wrap")))) {
+    return { sync: function(){ select.dispatchEvent(new Event("change",{bubbles:true})); }, setValue: function(v){ select.value=v; } };
+  }
   function svg(points) {
     var d = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     d.setAttribute("viewBox", "0 0 24 24");
@@ -1375,6 +1376,9 @@ function initUsersPane() {
   var entityMenu = el("[data-audit-entity-menu]");
   var entityCats = el("[data-audit-entity-cats]");
   var entitySub = el("[data-audit-entity-sub]");
+  if (!entityToggle || !entityMenu) {
+    console.warn("audit entity dropdown missing", {entityToggle: !!entityToggle, entityMenu: !!entityMenu});
+  }
   var entityGroups = [];
   var clearBtn = el("[data-audit-clear]");
   var detailModal = el("[data-audit-detail-modal]");
@@ -1904,10 +1908,13 @@ function initUsersPane() {
     hideEntitySub();
   }
 
-  entityToggle.addEventListener("click", function (ev) {
-    ev.stopPropagation();
-    if (entityMenu.hidden) { openEntityMenu(); } else { closeEntityMenu(); }
-  });
+  if (entityToggle && entityMenu) {
+    entityToggle.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      if (entityMenu.hidden) { openEntityMenu(); } else { closeEntityMenu(); }
+    });
+  }
 
   entityCats.addEventListener("mouseover", function (ev) {
     var cat = ev.target.closest("[data-audit-entity-cat]");

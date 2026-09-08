@@ -213,6 +213,14 @@
   }
 
   function bindStatusFilters() {
+    const sel = document.getElementById("expense-status-filter");
+    if (sel) {
+      sel.addEventListener("change", () => {
+        state.statusFilter = sel.value;
+        refresh();
+      });
+      return;
+    }
     $$("[data-status-filter]").forEach(btn => {
       btn.addEventListener("click", () => {
         state.statusFilter = btn.dataset.statusFilter;

@@ -133,9 +133,7 @@ Workforce | Cedar Control
     <div class="filterbar">
 
         <div class="local-search">
-
-            🔍
-
+            ⌕
             <span>
                 Search employees
             </span>
@@ -150,40 +148,12 @@ Workforce | Cedar Control
         </div>
 
 
-        <button
-            type="button"
-            class="quiet-button"
-            data-status-filter="all"
-        >
-            Status: All
-        </button>
-
-
-        <button
-            type="button"
-            class="quiet-button"
-            data-status-filter="ACTIVE"
-        >
-            Active
-        </button>
-
-
-        <button
-            type="button"
-            class="quiet-button"
-            data-status-filter="ON_LEAVE"
-        >
-            On leave
-        </button>
-
-
-        <button
-            type="button"
-            class="quiet-button"
-            data-status-filter="TERMINATED"
-        >
-            Terminated
-        </button>
+        <select id="workforce-status-filter" class="quiet-select" aria-label="Filter by status">
+            <option value="all">Status: All</option>
+            <option value="ACTIVE">Active</option>
+            <option value="ON_LEAVE">On leave</option>
+            <option value="TERMINATED">Terminated</option>
+        </select>
 
     </div>
 
