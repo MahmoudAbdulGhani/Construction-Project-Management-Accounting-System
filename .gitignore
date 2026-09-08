@@ -8,5 +8,6 @@ __pycache__/
 .idea/
 .vscode/
 .env
+.env.deploy
 media/
 staticfiles/
