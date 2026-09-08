@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 import os
 import sys
@@ -39,7 +40,8 @@ sys.path.insert(0, str(BASE_DIR / "apps"))
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("1", "true", "yes", "on")
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in (
+    "1", "true", "yes", "on")
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -185,6 +187,8 @@ TEST_RUNNER = 'construction.test_runner.AppsDirTestRunner'
 # is preferred for uploads: it bypasses Storage RLS entirely, so the logo
 # bucket never needs a public INSERT policy. It is used server-side only and
 # must never be exposed client-side.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -302,7 +306,8 @@ EMAIL_BACKEND = os.getenv(
 )
 EMAIL_HOST = os.getenv('EMAIL_HOST')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes', 'on')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in (
+    '1', 'true', 'yes', 'on')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@localhost')
@@ -310,7 +315,8 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@localhost')
 # Base URL of the frontend password-reset page; the reset link appends
 # ?uid=...&token=... to it. Served by the Django reset-password view at
 # /accounts/reset-password/ (see apps/core).
-PASSWORD_RESET_BASE_URL = os.getenv('PASSWORD_RESET_BASE_URL', 'http://localhost:8000/accounts/reset-password')
+PASSWORD_RESET_BASE_URL = os.getenv(
+    'PASSWORD_RESET_BASE_URL', 'http://localhost:8000/accounts/reset-password')
 
 # How long a password-reset token stays valid (Django's default: 3 days).
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '259200'))
@@ -344,7 +350,6 @@ REST_FRAMEWORK = {
 
 # SimpleJWT configuration
 # https://django-rest-framework-simplejwt.readthedocs.io/en/latest/settings.html
-from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),

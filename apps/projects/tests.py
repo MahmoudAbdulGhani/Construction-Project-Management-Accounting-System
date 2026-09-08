@@ -42,7 +42,8 @@ class ProjectModelTests(TestCase):
         self.assertNotIn(Project.STATUS_COMPLETED, allowed)
 
     def test_completed_is_a_final_status(self):
-        self.assertEqual(Project.ALLOWED_TRANSITIONS[Project.STATUS_COMPLETED], set())
+        self.assertEqual(
+            Project.ALLOWED_TRANSITIONS[Project.STATUS_COMPLETED], set())
 
 
 class ProjectSerializerStatusTransitionTests(TestCase):
@@ -50,7 +51,8 @@ class ProjectSerializerStatusTransitionTests(TestCase):
         from .serializers import ProjectSerializer
 
         instance = Project(status=Project.STATUS_COMPLETED)
-        serializer = ProjectSerializer(instance=instance, data={}, partial=True)
+        serializer = ProjectSerializer(
+            instance=instance, data={}, partial=True)
         serializer.instance = instance
         with self.assertRaises(Exception):
             serializer.run_validation({"status": Project.STATUS_ACTIVE})
@@ -82,7 +84,8 @@ class PhaseModelTests(TestCase):
         self.assertEqual(allowed, {Phase.STATUS_IN_PROGRESS})
 
     def test_completed_is_final(self):
-        self.assertEqual(Phase.ALLOWED_TRANSITIONS[Phase.STATUS_COMPLETED], set())
+        self.assertEqual(
+            Phase.ALLOWED_TRANSITIONS[Phase.STATUS_COMPLETED], set())
 
 
 class PhaseSerializerTests(TestCase):
@@ -102,7 +105,8 @@ class PhaseSerializerTests(TestCase):
         serializer = PhaseSerializer()
         serializer.instance = instance
         self.assertEqual(
-            serializer.validate_status(Phase.STATUS_IN_PROGRESS), Phase.STATUS_IN_PROGRESS
+            serializer.validate_status(
+                Phase.STATUS_IN_PROGRESS), Phase.STATUS_IN_PROGRESS
         )
 
     def test_end_date_before_start_date_rejected(self):
@@ -111,14 +115,16 @@ class PhaseSerializerTests(TestCase):
         serializer = PhaseSerializer()
         serializer.instance = None
         with self.assertRaises(Exception):
-            serializer.validate({"start_date": "2026-09-10", "end_date": "2026-09-01"})
+            serializer.validate(
+                {"start_date": "2026-09-10", "end_date": "2026-09-01"})
 
     def test_completing_a_phase_auto_sets_full_progress(self):
         from decimal import Decimal
 
         from .serializers import PhaseSerializer
 
-        instance = Phase(status=Phase.STATUS_IN_PROGRESS, progress_percentage=Decimal("60.00"))
+        instance = Phase(status=Phase.STATUS_IN_PROGRESS,
+                         progress_percentage=Decimal("60.00"))
         serializer = PhaseSerializer()
         serializer.instance = instance
         result = serializer.validate({"status": Phase.STATUS_COMPLETED})
@@ -129,11 +135,13 @@ class PhaseSerializerTests(TestCase):
 
         from .serializers import PhaseSerializer
 
-        instance = Phase(status=Phase.STATUS_IN_PROGRESS, progress_percentage=Decimal("60.00"))
+        instance = Phase(status=Phase.STATUS_IN_PROGRESS,
+                         progress_percentage=Decimal("60.00"))
         serializer = PhaseSerializer()
         serializer.instance = instance
         result = serializer.validate(
-            {"status": Phase.STATUS_COMPLETED, "progress_percentage": Decimal("95.00")}
+            {"status": Phase.STATUS_COMPLETED,
+                "progress_percentage": Decimal("95.00")}
         )
         self.assertEqual(result["progress_percentage"], Decimal("95.00"))
 
@@ -144,7 +152,8 @@ class ProjectFilteringAPITests(WithProjectsTableMixin, WithClientsTableMixin, Te
     def setUp(self):
         self.client_obj = Client.objects.create(name="Jane Homeowner")
         self.other_client = Client.objects.create(name="Someone Else")
-        django_user = DjangoUser.objects.create_user(username="apitester_projects", password="pass12345")
+        django_user = DjangoUser.objects.create_user(
+            username="apitester_projects", password="pass12345")
         self.client = APIClient()
         self.client.force_authenticate(user=django_user)
 
@@ -160,17 +169,91 @@ class ProjectFilteringAPITests(WithProjectsTableMixin, WithClientsTableMixin, Te
         matching = self.make_project(code="TWR-FILTER-2")
         self.make_project(code="TWR-FILTER-3", buyer=self.other_client)
 
-        response = self.client.get(f"/api/projects/projects/?client={self.client_obj.id}")
+        response = self.client.get(
+            f"/api/projects/projects/?client={self.client_obj.id}")
         codes = [p["code"] for p in response.json()["results"]]
         self.assertEqual(codes, [matching.code])
 
     def test_filter_by_start_date_range(self):
-        in_range = self.make_project(code="TWR-FILTER-4", start_date="2026-06-15")
+        in_range = self.make_project(
+            code="TWR-FILTER-4", start_date="2026-06-15")
         self.make_project(code="TWR-FILTER-5", start_date="2026-01-01")
 
-        response = self.client.get("/api/projects/projects/?date_from=2026-06-01&date_to=2026-06-30")
+        response = self.client.get(
+            "/api/projects/projects/?date_from=2026-06-01&date_to=2026-06-30")
         codes = [p["code"] for p in response.json()["results"]]
         self.assertEqual(codes, [in_range.code])
+
+
+class ProjectRiskForecastAPITests(WithProjectsTableMixin, WithClientsTableMixin, TestCase):
+    def setUp(self):
+        self.client_obj = Client.objects.create(name="Jane Homeowner")
+        django_user = DjangoUser.objects.create_user(
+            username="apitester_risk",
+            password="pass12345",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=django_user)
+        self.project = Project.objects.create(
+            name="Harbor View",
+            code="HVR-RISK-1",
+            project_type=Project.TYPE_WHOLE_BUILDING,
+            start_date="2026-06-01",
+            contract_value=Decimal("100000.00"),
+            buyer=self.client_obj,
+        )
+
+    def test_risk_forecast_endpoint_uses_explicit_thresholds_and_trend_label(self):
+        from invoicing.models import SupplierInvoice
+        from suppliers.models import Supplier
+
+        supplier = Supplier.objects.create(name="Build Supply Co")
+        SupplierInvoice.objects.create(
+            supplier=supplier,
+            project=self.project,
+            invoice_number="SUP-001",
+            invoice_date="2026-08-01",
+            total_amount=Decimal("18000.00"),
+            status=SupplierInvoice.Status.SENT,
+        )
+
+        response = self.client.get(
+            f"/api/projects/projects/{self.project.id}/risk-forecast/")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["risk_level"], "HEALTHY")
+        self.assertEqual(
+            payload["forecast"]["label"],
+            "Trend-based estimate (not a prediction)",
+        )
+        self.assertEqual(
+            payload["thresholds"]["budget_utilization"]["healthy_max"],
+            "90.00%",
+        )
+        self.assertEqual(
+            payload["thresholds"]["forecast_variance_pct"]["watch_max"],
+            "20.00%",
+        )
+        self.assertIn("trend-based estimate", payload["explanation"].lower())
+
+    def test_risk_level_uses_worst_applicable_indicator(self):
+        from .advisor import _risk_level
+
+        indicators = {
+            "budget_utilization": Decimal("50.00"),
+            "forecast_variance_pct": Decimal("5.00"),
+            "schedule_gap": Decimal("-25.00"),
+            "spend_vs_progress_gap": Decimal("5.00"),
+        }
+
+        self.assertEqual(_risk_level(indicators), "AT_RISK")
+
+        indicators["schedule_gap"] = Decimal("-15.00")
+        self.assertEqual(_risk_level(indicators), "WATCH")
+
+        indicators["schedule_gap"] = Decimal("-10.00")
+        self.assertEqual(_risk_level(indicators), "HEALTHY")
 
 
 class BudgetModelTests(TestCase):
@@ -181,10 +264,12 @@ class BudgetModelTests(TestCase):
     """
 
     def test_allowed_transitions_from_draft(self):
-        self.assertEqual(Budget.ALLOWED_TRANSITIONS[Budget.STATUS_DRAFT], {Budget.STATUS_APPROVED})
+        self.assertEqual(Budget.ALLOWED_TRANSITIONS[Budget.STATUS_DRAFT], {
+                         Budget.STATUS_APPROVED})
 
     def test_closed_is_final(self):
-        self.assertEqual(Budget.ALLOWED_TRANSITIONS[Budget.STATUS_CLOSED], set())
+        self.assertEqual(
+            Budget.ALLOWED_TRANSITIONS[Budget.STATUS_CLOSED], set())
 
     def test_category_choices_match_task_spec(self):
         expected = {"MATERIALS", "LABOR", "CONTRACTORS", "EQUIPMENT", "OTHER"}
@@ -194,7 +279,8 @@ class BudgetModelTests(TestCase):
     def test_normalize_category_name(self):
         self.assertEqual(normalize_category_name("Materials"), "MATERIALS")
         self.assertEqual(normalize_category_name("  labor "), "LABOR")
-        self.assertEqual(normalize_category_name("Site Equipment"), "SITE_EQUIPMENT")
+        self.assertEqual(normalize_category_name(
+            "Site Equipment"), "SITE_EQUIPMENT")
 
 
 class BudgetSerializerTests(TestCase):
@@ -213,7 +299,8 @@ class BudgetSerializerTests(TestCase):
         instance = Budget(status=Budget.STATUS_APPROVED)
         serializer = BudgetSerializer()
         serializer.instance = instance
-        self.assertEqual(serializer.validate_status(Budget.STATUS_APPROVED), Budget.STATUS_APPROVED)
+        self.assertEqual(serializer.validate_status(
+            Budget.STATUS_APPROVED), Budget.STATUS_APPROVED)
 
 
 class ChangeOrderModelTests(TestCase):
@@ -235,17 +322,21 @@ class ChangeOrderModelTests(TestCase):
     def test_allowed_transitions_from_pending(self):
         allowed = ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_PENDING]
         self.assertEqual(
-            allowed, {ChangeOrder.STATUS_APPROVED, ChangeOrder.STATUS_REJECTED, ChangeOrder.STATUS_CANCELLED}
+            allowed, {ChangeOrder.STATUS_APPROVED,
+                      ChangeOrder.STATUS_REJECTED, ChangeOrder.STATUS_CANCELLED}
         )
 
     def test_approved_can_only_go_to_cancelled(self):
         self.assertEqual(
-            ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_APPROVED], {ChangeOrder.STATUS_CANCELLED}
+            ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_APPROVED], {
+                ChangeOrder.STATUS_CANCELLED}
         )
 
     def test_rejected_and_cancelled_are_final(self):
-        self.assertEqual(ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_REJECTED], set())
-        self.assertEqual(ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_CANCELLED], set())
+        self.assertEqual(
+            ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_REJECTED], set())
+        self.assertEqual(
+            ChangeOrder.ALLOWED_TRANSITIONS[ChangeOrder.STATUS_CANCELLED], set())
 
 
 class ChangeOrderSerializerTests(TestCase):
@@ -265,7 +356,8 @@ class PortfolioBudgetSummaryAPITests(WithProjectsTableMixin, WithClientsTableMix
         self.client_obj = Client.objects.create(name="Portfolio Corp")
         self.api = APIClient()
         self.api.force_authenticate(
-            user=DjangoUser.objects.create_user(username="portfolio_tester", password="pass12345")
+            user=DjangoUser.objects.create_user(
+                username="portfolio_tester", password="pass12345")
         )
 
     def test_empty_when_no_projects(self):
@@ -284,12 +376,17 @@ class PortfolioBudgetSummaryAPITests(WithProjectsTableMixin, WithClientsTableMix
             start_date="2026-01-01", contract_value=Decimal("300000"), buyer=self.client_obj,
         )
 
-        bud_a = Budget.objects.create(project=proj_a, name="Budget A", total_budget=Decimal("100000"), status=Budget.STATUS_APPROVED)
-        BudgetItem.objects.create(budget=bud_a, category="MATERIALS", budgeted_amount=Decimal("50000"))
-        BudgetItem.objects.create(budget=bud_a, category="LABOR", budgeted_amount=Decimal("30000"))
+        bud_a = Budget.objects.create(project=proj_a, name="Budget A", total_budget=Decimal(
+            "100000"), status=Budget.STATUS_APPROVED)
+        BudgetItem.objects.create(
+            budget=bud_a, category="MATERIALS", budgeted_amount=Decimal("50000"))
+        BudgetItem.objects.create(
+            budget=bud_a, category="LABOR", budgeted_amount=Decimal("30000"))
 
-        bud_b = Budget.objects.create(project=proj_b, name="Budget B", total_budget=Decimal("80000"), status=Budget.STATUS_DRAFT)
-        BudgetItem.objects.create(budget=bud_b, category="MATERIALS", budgeted_amount=Decimal("40000"))
+        bud_b = Budget.objects.create(project=proj_b, name="Budget B", total_budget=Decimal(
+            "80000"), status=Budget.STATUS_DRAFT)
+        BudgetItem.objects.create(
+            budget=bud_b, category="MATERIALS", budgeted_amount=Decimal("40000"))
 
         response = self.api.get("/api/projects/budgets/portfolio-summary/")
         self.assertEqual(response.status_code, 200)
@@ -303,9 +400,11 @@ class PortfolioBudgetSummaryAPITests(WithProjectsTableMixin, WithClientsTableMix
             code="PORT-C", name="Project Gamma", project_type=Project.TYPE_WHOLE_BUILDING,
             start_date="2026-01-01", contract_value=Decimal("200000"), buyer=self.client_obj,
         )
-        Budget.objects.create(project=proj, name="Budget C", total_budget=Decimal("60000"), status=Budget.STATUS_APPROVED)
+        Budget.objects.create(project=proj, name="Budget C", total_budget=Decimal(
+            "60000"), status=Budget.STATUS_APPROVED)
 
-        response = self.api.get(f"/api/projects/budgets/portfolio-summary/?project={proj.id}")
+        response = self.api.get(
+            f"/api/projects/budgets/portfolio-summary/?project={proj.id}")
         data = response.json()
         self.assertEqual(data["totals"]["projects"], 1)
 
@@ -325,7 +424,8 @@ class DeleteReturnsMethodNotAllowedTests(
         self.client_obj = Client.objects.create(name="Delete Test Co")
         self.api = APIClient()
         self.api.force_authenticate(
-            user=DjangoUser.objects.create_user(username="delete_tester", password="pass12345")
+            user=DjangoUser.objects.create_user(
+                username="delete_tester", password="pass12345")
         )
         self.project = Project.objects.create(
             code="DEL-001", name="Delete Me", project_type=Project.TYPE_WHOLE_BUILDING,
@@ -340,11 +440,16 @@ class DeleteReturnsMethodNotAllowedTests(
         )
 
     def test_delete_project_returns_405_not_500(self):
-        response = self.api.delete(f"/api/projects/projects/{self.project.id}/")
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        response = self.api.delete(
+            f"/api/projects/projects/{self.project.id}/")
+        self.assertEqual(response.status_code,
+                         status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertTrue(Project.objects.filter(pk=self.project.id).exists())
 
     def test_delete_change_order_returns_405_not_500(self):
-        response = self.api.delete(f"/api/projects/change-orders/{self.change_order.id}/")
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-        self.assertTrue(ChangeOrder.objects.filter(pk=self.change_order.id).exists())
+        response = self.api.delete(
+            f"/api/projects/change-orders/{self.change_order.id}/")
+        self.assertEqual(response.status_code,
+                         status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertTrue(ChangeOrder.objects.filter(
+            pk=self.change_order.id).exists())

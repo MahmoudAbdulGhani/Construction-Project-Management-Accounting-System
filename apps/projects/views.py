@@ -47,7 +47,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     permission_classes = [IsAuthenticated]
 
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend,
+                       filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "project_type", "is_archived"]
     search_fields = ["name", "code", "location"]
     ordering_fields = ["created_at", "start_date", "contract_value", "name"]
@@ -105,7 +106,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         serializer = ProjectEmployeeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(project=project, assigned_at=request.data.get("assigned_at") or timezone.localdate())
+        serializer.save(project=project, assigned_at=request.data.get(
+            "assigned_at") or timezone.localdate())
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="contractors")
@@ -135,14 +137,16 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        assignment.released_at = request.data.get("released_at") or timezone.localdate()
+        assignment.released_at = request.data.get(
+            "released_at") or timezone.localdate()
         assignment.save(update_fields=["released_at"])
         return Response(ProjectEmployeeSerializer(assignment).data)
 
     @action(detail=True, methods=["get"])
     def documents(self, request, pk=None):
         project = self.get_object()
-        qs = ProjectDocument.objects.filter(entity_type="project", entity_id=project.id)
+        qs = ProjectDocument.objects.filter(
+            entity_type="project", entity_id=project.id)
         return Response(ProjectDocumentSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="phases")
@@ -177,7 +181,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project = self.get_object()
         budget_id = request.query_params.get("budget")
         if budget_id:
-            budget = Budget.objects.filter(id=budget_id, project=project).first()
+            budget = Budget.objects.filter(
+                id=budget_id, project=project).first()
             if budget is None:
                 return Response(
                     {"detail": "No budget with that id on this project."},
@@ -191,6 +196,18 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
         return Response(get_budget_summary(budget))
+
+    @action(detail=True, methods=["get"], url_path="risk-forecast")
+    def risk_forecast(self, request, pk=None):
+        """
+        Deterministic project risk and forecast assessment. The forecast is a
+        trend-based estimate built from actual costs and project progress, while
+        Groq is only used to explain those numbers in plain English.
+        """
+        from .advisor import get_project_risk_forecast
+
+        project = self.get_object()
+        return Response(get_project_risk_forecast(project))
 
 
 class BudgetViewSet(viewsets.ModelViewSet):
@@ -336,7 +353,8 @@ class PhaseViewSet(viewsets.ModelViewSet):
     serializer_class = PhaseSerializer
     queryset = Phase.objects.all()
 
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend,
+                       filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["project", "status", "responsible_emp_id"]
     search_fields = ["name", "description"]
     ordering_fields = ["sequence_number", "start_date", "end_date"]
@@ -412,7 +430,8 @@ class ChangeOrderViewSet(viewsets.ModelViewSet):
         # effect shouldn't disappear. Cancel it instead, for audit history.
         # Return 405 (client mistake) rather than a NotImplementedError/500.
         return Response(
-            data={"detail": "Change orders cannot be deleted. Use POST /cancel/ instead."},
+            data={
+                "detail": "Change orders cannot be deleted. Use POST /cancel/ instead."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
@@ -430,7 +449,8 @@ class ChangeOrderViewSet(viewsets.ModelViewSet):
             approved_by = request.data.get("approved_by")
             if approved_by:
                 change_order.approved_by_id = approved_by
-            change_order.save(update_fields=["status", "approved_by", "updated_at"])
+            change_order.save(
+                update_fields=["status", "approved_by", "updated_at"])
             apply_change_order_to_contract(change_order)
 
         change_order.refresh_from_db()
@@ -452,7 +472,8 @@ class ChangeOrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         change_order = self.get_object()
-        cancellable_from = {ChangeOrder.STATUS_PENDING, ChangeOrder.STATUS_APPROVED}
+        cancellable_from = {ChangeOrder.STATUS_PENDING,
+                            ChangeOrder.STATUS_APPROVED}
         if change_order.status not in cancellable_from:
             return Response(
                 {"detail": f"Cannot cancel a change order in '{change_order.status}' status."},

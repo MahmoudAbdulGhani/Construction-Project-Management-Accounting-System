@@ -353,7 +353,52 @@
                 </button>
 
             </article>
+            <article class="panel advisor-panel" data-project-advisor-panel>
 
+                <div class="panel-head">
+
+                    <div>
+                        <div class="advisor-kicker"><i data-lucide="sparkles"></i> Decision support</div>
+                        <h2>AI Project Risk & Forecast Advisor</h2>
+                        <p>Deterministic trend-based estimate</p>
+                    </div>
+
+                    <strong class="status risk-healthy" data-project-risk-level>
+                        —
+                    </strong>
+
+                </div>
+
+                <div class="advisory-summary">
+                    <div>
+                        <span>Forecast</span>
+                        <strong data-project-forecast-total>—</strong>
+                    </div>
+                    <div>
+                        <span>Margin</span>
+                        <strong data-project-forecast-margin>—</strong>
+                    </div>
+                    <div>
+                        <span>Cost ratio</span>
+                        <strong data-project-forecast-ratio>—</strong>
+                    </div>
+                </div>
+
+                <div class="advisory-explanation" data-project-advisor-explanation>
+                    Loading risk forecast…
+                </div>
+
+                <div class="advisor-factors" data-project-advisor-factors>
+                    <div class="advisor-factors-loading">Calculating project indicators…</div>
+                </div>
+
+                <div class="advisory-thresholds" data-project-advisor-thresholds>
+                    <span><b>Healthy</b> &le; 90% utilization</span>
+                    <span><b>Watch</b> 90% to 110%</span>
+                    <span><b>At Risk</b> &gt; 110%</span>
+                </div>
+
+            </article>
 
             <!-- Project health -->
 
@@ -765,6 +810,37 @@
 
 
 {% block page_js %}
+
+<style>
+    .advisor-panel{background:linear-gradient(135deg,#f8fcfa 0%,#e4f2ed 100%)!important;border-color:#83b8aa!important;overflow:hidden;position:relative}
+    .advisor-panel:before{content:"";position:absolute;inset:0 0 auto;height:4px;background:linear-gradient(90deg,#007c73,#f0a72f,#df6558)}
+    .advisor-panel .panel-head{align-items:flex-start;padding-top:8px}
+    .advisor-kicker{display:flex;align-items:center;gap:6px;color:#08736c;font-size:10px;font-weight:850;letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px}
+    .advisor-kicker svg{width:14px;height:14px}
+    .advisor-panel .panel-head h2{margin-bottom:5px}
+    .advisor-panel .panel-head p{color:#55716a}
+    .advisor-panel .status{font-weight:900;letter-spacing:.06em}
+    .advisor-panel .risk-healthy{background:#d6f0e9;color:#08736c}
+    .advisor-panel .risk-watch{background:#fff0cf;color:#986213}
+    .advisor-panel .risk-at-risk{background:#f9deda;color:#a8453d}
+    .advisory-summary{border:1px solid #b9d7ce;background:#ffffffa8;border-radius:12px;padding:12px 14px;gap:0}
+    .advisory-summary>div{padding:2px 15px;border-right:1px solid #c9ded8}
+    .advisory-summary>div:first-child{padding-left:0}.advisory-summary>div:last-child{border-right:0;padding-right:0}
+    .advisory-summary span{color:#55716a;font-size:10px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}
+    .advisory-summary strong{color:#173f3c;font-size:20px}
+    .advisory-explanation{margin:16px 0 14px;padding:12px 14px;border-left:3px solid #e4a332;background:#fffdf7;color:#425d56;font-size:12px;line-height:1.65}
+    .advisor-factors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .advisor-factor{padding:11px 12px;border:1px solid #c3dbd4;border-radius:10px;background:#ffffffb8}
+    .advisor-factor-head{display:flex;justify-content:space-between;gap:10px;align-items:center;color:#41615a;font-size:11px;font-weight:750}
+    .advisor-factor-head span{display:flex;align-items:center;gap:6px;min-width:0}.advisor-factor-head span svg{width:14px;height:14px;color:#08736c;flex:0 0 auto}
+    .advisor-factor-head strong{color:#173f3c;font-size:12px;white-space:nowrap}
+    .advisor-factor-track{height:4px;margin-top:9px;border-radius:9px;background:#dce9e5;overflow:hidden}.advisor-factor-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087f74,#e5a133)}
+    .advisory-thresholds{margin-top:14px;padding-top:12px;border-top:1px solid #c3dbd4;gap:8px!important}
+    .advisory-thresholds span{padding:5px 8px;border-radius:6px;background:#ffffff9c;color:#58716a;font-size:10px!important}
+    .advisory-thresholds b{color:#275b53}
+    .advisor-factors-loading{grid-column:1/-1;color:#6b837d;font-size:12px}
+    @media(max-width:580px){.advisor-panel .panel-head{gap:10px}.advisory-summary{display:grid;grid-template-columns:repeat(3,1fr)}.advisory-summary>div{padding:2px 8px}.advisory-summary strong{font-size:16px}.advisor-factors{grid-template-columns:1fr}}
+</style>
 
 <script src="{% static 'js/project_detail.js' %}"></script>
 
