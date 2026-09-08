@@ -96,5 +96,13 @@
     </footer>
   </form>
 </dialog>
+
+<dialog class="procurement-dialog po-confirm-dialog" data-po-confirm-dialog>
+  <div class="po-confirm-shell">
+    <header><div><p class="eyebrow">CONFIRM</p><h2 data-po-confirm-title>Are you sure?</h2></div></header>
+    <p class="confirm-message" data-po-confirm-message></p>
+    <footer><button type="button" class="quiet-button" data-po-confirm-cancel>Cancel</button><button type="button" class="primary-button" data-po-confirm-ok>Confirm</button></footer>
+  </div>
+</dialog>
 {% endblock %}
 {% block page_js %}<script src="{% static 'js/procurement.js' %}" defer></script>{% endblock %}

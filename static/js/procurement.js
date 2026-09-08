@@ -655,16 +655,37 @@
   /* ---- PO status transitions (submit/approve/cancel) ---- */
   let transitionBusy = false;
 
+  const poConfirmText = {
+    submit: { title: "Submit purchase order?", message: "Submit this purchase order to the supplier? The order can then be approved and received against.", okText: "Submit order" },
+    approve: { title: "Approve purchase order?", message: "Approve this purchase order? Approved orders can be received into stock.", okText: "Approve order" },
+    cancel: { title: "Cancel purchase order?", message: "Cancel this purchase order? This cannot be undone.", okText: "Cancel order" },
+  };
+
+  function confirmPoAction(kind) {
+    const { title, message, okText } = poConfirmText[kind];
+    return new Promise((resolve) => {
+      const dialog = $("[data-po-confirm-dialog]");
+      $("[data-po-confirm-title]").textContent = title;
+      $("[data-po-confirm-message]").textContent = message;
+      let settled = false;
+      const settle = (value) => { if (settled) return; settled = true; resolve(value); };
+      const ok = $("[data-po-confirm-ok]");
+      ok.textContent = okText;
+      ok.onclick = () => { settle(true); dialog.close(); };
+      $("[data-po-confirm-cancel]").onclick = () => dialog.close();
+      dialog.oncancel = () => dialog.close();   // Esc key
+      dialog.onclose = () => settle(false);
+      dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };  // click on backdrop
+      dialog.showModal();
+    });
+  }
+
   async function runPoAction(kind, id) {
     if (transitionBusy) return;
     const endpoint = { submit: "submit", approve: "approve", cancel: "cancel" }[kind];
     if (!endpoint) return;
-    const confirmText = {
-      submit: "Submit this purchase order to the supplier?",
-      approve: "Approve this purchase order?",
-      cancel: "Cancel this purchase order? This cannot be undone.",
-    }[kind];
-    if (!window.confirm(confirmText)) return;
+    const confirmed = await confirmPoAction(kind);
+    if (!confirmed) return;
 
     transitionBusy = true;
     try {
