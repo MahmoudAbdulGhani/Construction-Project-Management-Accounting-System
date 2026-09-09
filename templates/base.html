@@ -9,12 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Libre+Franklin:wght@700;800&display=swap" rel="stylesheet">
-  {% block core_css %}<link rel="stylesheet" href="{% static 'css/cedar.css' %}">{% endblock %}
+  {% block core_css %}<link rel="stylesheet" href="{% static 'css/cedar.css' %}?v=20260909-mobiletint">{% endblock %}
   {% block extra_css %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% block content %}{% endblock %}
-  <script src="{% static 'js/cedar.js' %}" defer></script>
+  <script src="{% static 'js/cedar.js' %}?v=20260909-mobiletint" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>
